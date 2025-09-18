@@ -27,7 +27,7 @@ import { SparklesIcon } from './components/icons/SparklesIcon';
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
-import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email } from './types';
+import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email, Interaction } from './types';
 
 import {
     findJobsOnRealWebsite,
@@ -306,28 +306,41 @@ function App() {
         if (!activeProfile) return;
 
         setStatus(AppStatus.Loading);
-        setMessage('ИИ анализирует HTML-код и ваше резюме...');
+        
         setFoundJobs([]);
         setView('search');
 
         try {
-            const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
-            const results = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings);
-            
-            const newJobs = results.filter(job => !existingJobUrls.has(job.url));
+            const enabledPlatforms = activeProfile.settings.platforms.filter(p => p.enabled);
+            if (enabledPlatforms.length === 0) {
+                setStatus(AppStatus.Error);
+                setMessage("Нет активных площадок для поиска. Включите хотя бы одну в Настройках -> Платформы.");
+                return;
+            }
 
-            const jobsWithIds = newJobs.map(job => ({
-                ...job,
-                id: uuidv4(),
-                kanbanStatus: 'new' as KanbanStatus,
-                profileId: activeProfile.id,
-                userId: user!.uid,
-            }));
+            const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
+            let allResults: Job[] = [];
             
-            setFoundJobs(jobsWithIds);
+            for (const platform of enabledPlatforms) {
+                setMessage(`ИИ сканирует ${platform.name}...`);
+                const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings, platform);
+                const newJobsFromPlatform = platformResults
+                    .filter(job => !existingJobUrls.has(job.url))
+                    .map(job => ({
+                        ...job,
+                        id: uuidv4(),
+                        kanbanStatus: 'new' as KanbanStatus,
+                        profileId: activeProfile.id,
+                        userId: user!.uid,
+                        history: [],
+                    }));
+                allResults = [...allResults, ...newJobsFromPlatform];
+            }
+
+            setFoundJobs(allResults);
             setStatus(AppStatus.Success);
-             if (jobsWithIds.length > 0) {
-                setMessage(`Найдено ${jobsWithIds.length} новых релевантных вакансий.`);
+             if (allResults.length > 0) {
+                setMessage(`Найдено ${allResults.length} новых релевантных вакансий с ${enabledPlatforms.length} площадок.`);
             } else {
                 setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
             }
@@ -342,6 +355,21 @@ function App() {
         setFoundJobs(prev => prev.filter(job => !jobsToSave.find(saved => saved.id === job.id)));
         setView('applications');
     };
+    
+    const handleAddInteraction = (jobId: string, type: Interaction['type'], content: string) => {
+        const job = jobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        const newInteraction: Interaction = {
+            id: uuidv4(),
+            type,
+            content,
+            timestamp: new Date().toISOString(),
+        };
+        const updatedHistory = [...(job.history || []), newInteraction];
+        handleUpdateJob(jobId, { history: updatedHistory });
+    };
+
 
     const handleUpdateJob = (jobId: string, updates: Partial<Job>) => {
         updateJob(jobId, updates);
@@ -349,6 +377,7 @@ function App() {
 
     const handleUpdateJobStatus = (jobId: string, newStatus: KanbanStatus) => {
         handleUpdateJob(jobId, { kanbanStatus: newStatus });
+        handleAddInteraction(jobId, 'status_change', `Статус изменен на "${kanbanStatusMap[newStatus]}"`);
     };
 
     // --- AI Actions ---
@@ -425,11 +454,12 @@ function App() {
                         from: googleUser.email,
                         fromName: activeProfile.name,
                     });
-                     setMessage(`Email отправлен через ваш Gmail аккаунт. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+                     setMessage(`Email отправлен через ваш Gmail аккаунт.`);
+                     handleAddInteraction(job.id, 'email_sent', `Email отправлен: "${subject}"`);
                 } else {
                     const url = `mailto:${job.contacts?.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                     window.open(url, '_blank');
-                    setMessage(`Открыт почтовый клиент. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+                    setMessage(`Открыт почтовый клиент.`);
                 }
             } else { // Messengers
                 setMessage('ИИ готовит сообщение для мессенджера...');
@@ -443,7 +473,7 @@ function App() {
                     url = `tg://msg?to=${contact}&text=${encodeURIComponent(message)}`;
                 }
                  window.open(url, '_blank');
-                 setMessage(`Открыт клиент для отправки сообщения. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+                 setMessage(`Открыт клиент для отправки сообщения.`);
             }
             
             setStatus(AppStatus.Success);
@@ -459,6 +489,16 @@ function App() {
         }
     };
     
+    const handleQuickApplyFromCard = (job: Job) => {
+        if (!isGoogleConnected || !isGapiReady || !job.contacts?.email) {
+            const reason = !isGoogleConnected ? "Подключите Gmail" : !isGapiReady ? "API Google не готов" : "Email не указан";
+            setMessage(`Невозможно отправить: ${reason}`);
+            setStatus(AppStatus.Error);
+            return;
+        }
+        handleQuickApply('email', job);
+    };
+
     // --- Gmail Scanner ---
     const handleOpenGmailScanner = async () => {
         if (!activeProfile || !isGoogleConnected) return;
@@ -588,8 +628,6 @@ function App() {
                 <Header 
                     theme={theme} 
                     setTheme={setTheme} 
-                    view={view} 
-                    setView={setView} 
                     user={user} 
                     onLogout={handleLogout} 
                     onOpenSettings={() => setIsSettingsModalOpen(true)}
@@ -601,6 +639,14 @@ function App() {
                             <p className="text-sm text-slate-500 dark:text-slate-400">
                                 Активный профиль: <span className="font-semibold text-primary-500">{activeProfile?.name || '...'}</span>
                             </p>
+                        </div>
+                         <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                            <button onClick={() => setView('search')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'search' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                Поиск
+                            </button>
+                            <button onClick={() => setView('applications')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'applications' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                Отклики
+                            </button>
                         </div>
                         <button
                             onClick={handleSearch}
@@ -641,6 +687,7 @@ function App() {
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
                                 onAdaptResume={handleAdaptResume}
                                 onGenerateEmail={handleGenerateEmail}
+                                onQuickApplyEmail={handleQuickApplyFromCard}
                                 isGoogleConnected={isGoogleConnected}
                                 isGapiReady={isGapiReady}
                                 onScanReplies={handleOpenGmailScanner}

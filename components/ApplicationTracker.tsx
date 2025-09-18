@@ -10,12 +10,23 @@ interface ApplicationTrackerProps {
     onViewDetails: (job: Job) => void;
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
+    onQuickApplyEmail: (job: Job) => void;
     isGoogleConnected: boolean;
     isGapiReady: boolean;
     onScanReplies: () => void;
 }
 
-const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail, isGoogleConnected, isGapiReady, onScanReplies }) => {
+const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ 
+    jobs, 
+    onUpdateJobStatus, 
+    onViewDetails, 
+    onAdaptResume, 
+    onGenerateEmail, 
+    onQuickApplyEmail,
+    isGoogleConnected, 
+    isGapiReady, 
+    onScanReplies 
+}) => {
     if (jobs.length === 0) {
         return (
             <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
@@ -46,6 +57,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJ
                 onViewDetails={onViewDetails}
                 onAdaptResume={onAdaptResume}
                 onGenerateEmail={onGenerateEmail}
+                onQuickApplyEmail={onQuickApplyEmail}
             />
         </div>
     );

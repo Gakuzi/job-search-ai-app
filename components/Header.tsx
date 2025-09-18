@@ -8,24 +8,15 @@ import { User } from 'firebase/auth';
 interface HeaderProps {
     theme: string;
     setTheme: (theme: string) => void;
-    view: 'search' | 'applications';
-    setView: (view: 'search' | 'applications') => void;
     user: User | null;
     onLogout: () => void;
     onOpenSettings: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, onLogout, onOpenSettings }) => {
+const Header: React.FC<HeaderProps> = ({ theme, setTheme, user, onLogout, onOpenSettings }) => {
     const toggleTheme = () => {
         setTheme(theme === 'dark' ? 'light' : 'dark');
     };
-
-    const navButtonClasses = (buttonView: 'search' | 'applications') => 
-        `px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-            view === buttonView 
-            ? 'bg-primary-500 text-white' 
-            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-        }`;
 
     return (
         <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-10">
@@ -35,15 +26,6 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, o
                     <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-white">
                         Поиск Работы <span className="text-primary-500">с ИИ</span>
                     </h1>
-                </div>
-                
-                <div className="hidden sm:flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                    <button onClick={() => setView('search')} className={navButtonClasses('search')}>
-                        Поиск
-                    </button>
-                    <button onClick={() => setView('applications')} className={navButtonClasses('applications')}>
-                        Отклики
-                    </button>
                 </div>
                 
                 <div className="flex items-center gap-2 sm:gap-4">
@@ -68,16 +50,6 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, o
                         aria-label="Переключить тему"
                     >
                         {theme === 'dark' ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
-                    </button>
-                </div>
-            </div>
-            <div className="sm:hidden p-2 bg-slate-100 dark:bg-slate-900/50">
-                 <div className="flex items-center gap-2 p-1 bg-slate-200 dark:bg-slate-700 rounded-lg justify-center">
-                    <button onClick={() => setView('search')} className={navButtonClasses('search')}>
-                        Поиск
-                    </button>
-                    <button onClick={() => setView('applications')} className={navButtonClasses('applications')}>
-                        Отклики
                     </button>
                 </div>
             </div>

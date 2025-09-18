@@ -1,4 +1,5 @@
 import type { SearchSettings, Prompts } from './types';
+import { v4 as uuidv4 } from 'uuid';
 
 export const DEFAULT_RESUME = `
 # Имя Фамилия
@@ -40,6 +41,9 @@ export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
     keywords: 'SaaS, FinTech',
     minCompanyRating: 3.5,
     limit: 10,
+    platforms: [
+        { id: uuidv4(), name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true },
+    ]
 };
 
 export const DEFAULT_PROMPTS: Prompts = {
@@ -50,17 +54,17 @@ export const DEFAULT_PROMPTS: Prompts = {
 
 # ВХОДНЫЕ ДАННЫЕ:
 1.  **Резюме кандидата:** Текст резюме для контекста и анализа соответствия.
-2.  **HTML-код:** Полный HTML страницы https://hh.ru/search/vacancy?...
+2.  **HTML-код:** Полный HTML страницы поиска вакансий.
 
 # ИНСТРУКЦИИ:
-1.  **Найди карточки вакансий:** Внимательно изучи HTML-структуру. Каждая вакансия обычно находится внутри div-контейнера с классом вроде 'vacancy-card--z_UXteNo7bRGzxreB0_I'.
+1.  **Найди карточки вакансий:** Внимательно изучи HTML-структуру. Каждая вакансия обычно находится внутри div-контейнера с классом вроде 'vacancy-card--z_UXteNo7bRGzxreB0_I' или 'vacancy-item--main'.
 2.  **Извлеки данные для каждой вакансии:**
-    *   **title:** Название вакансии (обычно в теге \`<a>\` с классом 'bloko-link').
+    *   **title:** Название вакансии (обычно в теге \`<a>\` с классом 'bloko-link' или похожем).
     *   **company:** Название компании.
     *   **salary:** Зарплата. Если не указана, верни "не указана". Нормализуй (например, "от 150 000 руб." -> "от 150 000 RUB").
     *   **location:** Город или регион.
     *   **description:** Краткое описание или требования (обычно в div с классом 'g-user-content'). Это может быть краткий фрагмент.
-    *   **url:** Полная ссылка на вакансию (извлеки из атрибута \`href\` тега \`<a>\`). Должна начинаться с 'https://hh.ru'.
+    *   **url:** Полная ссылка на вакансию (извлеки из атрибута \`href\` тега \`<a>\`). Убедись, что ссылка абсолютная.
     *   **contacts:** Постарайся найти контактные данные в описании вакансии (email, телефон, telegram username). Если найдено, верни объект вида \`{"email": "...", "phone": "...", "telegram": "..."}\`. Если ничего не найдено, не включай это поле в JSON.
     *   **companyRating:** Оставь 0, так как на странице поиска рейтинга нет.
     *   **companyReviewSummary:** Оставь пустой строкой.

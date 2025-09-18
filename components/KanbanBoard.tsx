@@ -9,9 +9,10 @@ interface KanbanBoardProps {
     onViewDetails: (job: Job) => void;
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
+    onQuickApplyEmail: (job: Job) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail, onQuickApplyEmail }) => {
     const [draggedOverColumn, setDraggedOverColumn] = useState<KanbanStatus | null>(null);
     
     const columns: KanbanStatus[] = ['new', 'tracking', 'interview', 'offer', 'archive'];
@@ -67,6 +68,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onVi
                                     onViewDetails={onViewDetails}
                                     onAdaptResume={onAdaptResume}
                                     onGenerateEmail={onGenerateEmail}
+                                    onQuickApplyEmail={onQuickApplyEmail}
                                 />
                         ))}
                     </div>

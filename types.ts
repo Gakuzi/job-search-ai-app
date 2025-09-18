@@ -1,3 +1,10 @@
+export interface Platform {
+    id: string;
+    name: string;
+    url: string;
+    enabled: boolean;
+}
+
 export interface SearchSettings {
     positions: string;
     salary: number;
@@ -10,9 +17,17 @@ export interface SearchSettings {
     keywords: string;
     minCompanyRating: number;
     limit: number;
+    platforms: Platform[];
 }
 
 export type KanbanStatus = 'new' | 'tracking' | 'interview' | 'offer' | 'archive';
+
+export interface Interaction {
+    id: string;
+    type: 'email_sent' | 'email_received' | 'call' | 'note' | 'status_change';
+    content: string;
+    timestamp: string; // ISO 8601 format
+}
 
 export interface Job {
     id: string;
@@ -27,6 +42,7 @@ export interface Job {
     requirements: string[];
     matchAnalysis: string;
     url: string;
+    sourcePlatform: string;
     contacts?: {
         email?: string;
         phone?: string;
@@ -34,6 +50,7 @@ export interface Job {
     };
     kanbanStatus: KanbanStatus;
     notes?: string;
+    history?: Interaction[];
     profileId: string; // To associate job with a profile
     userId: string; // To associate job with a user
 }

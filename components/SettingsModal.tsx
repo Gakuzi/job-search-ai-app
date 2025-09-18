@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Profile, GoogleUser } from '../types';
+import type { Profile, GoogleUser, Platform } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
+import { v4 as uuidv4 } from 'uuid';
 import { XCircleIcon } from './icons/XCircleIcon';
 import { BriefcaseIcon } from './icons/BriefcaseIcon';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { LinkIcon } from './icons/LinkIcon';
 import { UserGroupIcon } from './icons/UserGroupIcon';
+import { PlusCircleIcon } from './icons/PlusCircleIcon';
 import GmailConnect from './GmailConnect';
 
-type SettingsTab = 'profiles' | 'search' | 'resume' | 'integrations';
+type SettingsTab = 'profiles' | 'search' | 'resume' | 'integrations' | 'platforms';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -67,6 +69,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             draft.settings = { ...draft.settings, [name]: parsedValue };
         });
     }, [onUpdateProfile]);
+    
+    const handlePlatformChange = (id: string, field: keyof Platform, value: string | boolean) => {
+        onUpdateProfile(draft => {
+            const platform = draft.settings.platforms.find(p => p.id === id);
+            if(platform) {
+                (platform[field] as any) = value;
+            }
+        });
+    };
+    
+    const handleAddPlatform = () => {
+        const newPlatform: Platform = { id: uuidv4(), name: 'Новая площадка', url: 'https://example.com/vacancies', enabled: false };
+        onUpdateProfile(draft => {
+            draft.settings.platforms.push(newPlatform);
+        });
+    };
+    
+    const handleRemovePlatform = (id: string) => {
+        onUpdateProfile(draft => {
+            draft.settings.platforms = draft.settings.platforms.filter(p => p.id !== id);
+        });
+    };
 
     const handleResumeChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const { value } = e.target;
@@ -110,6 +134,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
                     <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
                         <TabButton tabId="profiles" label="Профили" icon={<UserGroupIcon className="w-4 h-4" />}/>
+                        <TabButton tabId="platforms" label="Платформы" icon={<svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0112 13.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253M18.716 14.253A9.004 9.004 0 0112 21c-2.485 0-4.5-4.03-4.5-9s2.015-9 4.5-9 4.5 4.03 4.5 9" /></svg>}/>
                         <TabButton tabId="search" label="Параметры" icon={<BriefcaseIcon className="w-4 h-4" />}/>
                         <TabButton tabId="resume" label="Резюме" icon={<PencilSquareIcon className="w-4 h-4" />}/>
                         <TabButton tabId="integrations" label="Интеграции" icon={<LinkIcon className="w-4 h-4" />}/>
@@ -140,6 +165,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+                        {activeTab === 'platforms' && (
+                            <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
+                                <h3 className="text-lg font-semibold">Площадки для поиска</h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Укажите URL страниц поиска вакансий и активируйте те, по которым ИИ должен проводить поиск.</p>
+                                {activeProfile.settings.platforms.map((platform) => (
+                                    <div key={platform.id} className="grid grid-cols-12 gap-2 items-center">
+                                        <div className="col-span-12 sm:col-span-3">
+                                            <input type="text" value={platform.name} onChange={(e) => handlePlatformChange(platform.id, 'name', e.target.value)} placeholder="Название (напр. Habr)" className="w-full input-style"/>
+                                        </div>
+                                        <div className="col-span-12 sm:col-span-6">
+                                            <input type="text" value={platform.url} onChange={(e) => handlePlatformChange(platform.id, 'url', e.target.value)} placeholder="URL поиска" className="w-full input-style"/>
+                                        </div>
+                                        <div className="col-span-6 sm:col-span-1 flex items-center justify-center">
+                                             <input type="checkbox" checked={platform.enabled} onChange={(e) => handlePlatformChange(platform.id, 'enabled', e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"/>
+                                        </div>
+                                        <div className="col-span-6 sm:col-span-2">
+                                            <button onClick={() => handleRemovePlatform(platform.id)} className="w-full btn-danger text-sm">Удалить</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={handleAddPlatform} className="btn-secondary flex items-center gap-2">
+                                    <PlusCircleIcon className="w-5 h-5"/>
+                                    Добавить площадку
+                                </button>
                             </div>
                         )}
                         {activeTab === 'search' && (

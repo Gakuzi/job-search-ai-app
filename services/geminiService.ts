@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings, KanbanStatus } from '../types';
+import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
 
 const getAiClient = () => {
     // Vite использует `import.meta.env` для доступа к переменным окружения
@@ -24,27 +24,28 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
     }
 };
 
-export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings): Promise<Job[]> => {
+export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings, platform: Platform): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId'>[]> => {
     const ai = getAiClient();
     
     const query = encodeURIComponent(`${settings.positions} ${settings.location}`);
-    const searchUrl = `https://hh.ru/search/vacancy?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`;
+    // Use the platform's specific URL
+    const searchUrl = `${platform.url}?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`;
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
 
     let htmlContent: string;
     try {
         const response = await fetch(proxyUrl);
         if (!response.ok) {
-            throw new Error(`Ошибка сети при запросе к прокси: ${response.statusText}`);
+            throw new Error(`Ошибка сети при запросе к прокси для ${platform.name}: ${response.statusText}`);
         }
         const data = await response.json();
         htmlContent = data.contents;
         if (!htmlContent) {
-            throw new Error('Не удалось получить HTML-контент со страницы поиска.');
+            throw new Error(`Не удалось получить HTML-контент со страницы поиска ${platform.name}.`);
         }
     } catch (error) {
-        console.error("Error fetching job page HTML:", error);
-        throw new Error(`Не удалось загрузить страницу с вакансиями. Возможно, сайт-источник или прокси недоступен. ${error.message}`);
+        console.error(`Error fetching job page HTML from ${platform.name}:`, error);
+        throw new Error(`Не удалось загрузить страницу с вакансиями с ${platform.name}. ${error.message}`);
     }
 
     const prompt = promptTemplate.replace('{limit}', String(settings.limit));
@@ -87,7 +88,9 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
         }
     });
 
-    return JSON.parse(response.text) as Job[];
+    const parsedJobs = JSON.parse(response.text) as Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'sourcePlatform'>[];
+
+    return parsedJobs.map(job => ({ ...job, sourcePlatform: platform.name }));
 };
 
 export const adaptResume = async (promptTemplate: string, resume: string, job: Job): Promise<string> => {

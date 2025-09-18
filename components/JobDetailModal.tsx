@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { Job } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import { XCircleIcon } from './icons/XCircleIcon';
 import { ClipboardIcon } from './icons/ClipboardIcon';
@@ -10,6 +11,7 @@ import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
 import { MailIcon } from './icons/MailIcon';
 import { WhatsappIcon } from './icons/WhatsappIcon';
 import { TelegramIcon } from './icons/TelegramIcon';
+import { PlusCircleIcon } from './icons/PlusCircleIcon';
 
 
 interface JobDetailModalProps {
@@ -42,6 +44,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
     isGapiReady,
 }) => {
     const [notes, setNotes] = useState(job.notes || '');
+    const [newInteraction, setNewInteraction] = useState('');
     const debouncedNotes = useDebounce(notes, 500);
     const [quickApplyLoading, setQuickApplyLoading] = useState<'email' | 'whatsapp' | 'telegram' | null>(null);
 
@@ -61,6 +64,29 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
             setQuickApplyLoading(null);
         }
     }
+
+    const handleAddInteraction = () => {
+        if(!newInteraction.trim()) return;
+        const interaction: Interaction = {
+            id: uuidv4(),
+            type: 'note',
+            content: newInteraction,
+            timestamp: new Date().toISOString()
+        };
+        const updatedHistory = [...(job.history || []), interaction];
+        onUpdateJob(job.id, { history: updatedHistory });
+        setNewInteraction('');
+    };
+
+    const getInteractionIcon = (type: Interaction['type']) => {
+        switch (type) {
+            case 'email_sent': return '✉️';
+            case 'status_change': return '🔄';
+            case 'note': return '📝';
+            case 'call': return '📞';
+            default: return '🔹';
+        }
+    };
     
     return (
         <div 
@@ -78,16 +104,16 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                     <div>
                         <h2 id="modal-title" className="text-xl font-bold text-primary-600 dark:text-primary-400">{job.title}</h2>
                         <p className="text-md font-semibold text-slate-700 dark:text-slate-300">{job.company}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{job.location}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{job.location} ({job.sourcePlatform})</p>
                     </div>
                     <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" aria-label="Закрыть модальное окно">
                         <XCircleIcon className="w-6 h-6" />
                     </button>
                 </header>
 
-                <main className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 p-6 overflow-y-auto">
+                <main className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-6 p-6 overflow-y-auto">
                     {/* Left Column: Job Details */}
-                    <div className="md:col-span-2 prose prose-slate dark:prose-invert max-w-none">
+                    <div className="md:col-span-3 prose prose-slate dark:prose-invert max-w-none">
                         <div className="p-4 bg-primary-50 dark:bg-slate-800 rounded-lg">
                             <h4 className="font-semibold text-primary-800 dark:text-primary-200">Анализ от ИИ</h4>
                             <p className="text-sm text-primary-700 dark:text-primary-300 mt-1">{job.matchAnalysis}</p>
@@ -103,11 +129,11 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                             {job.requirements.map((item, index) => <li key={index}>{item}</li>)}
                         </ul>
                         <p><strong>Рейтинг компании:</strong> ⭐ {job.companyRating}/5 - <em>{job.companyReviewSummary}</em></p>
-                        <a href={job.url} target="_blank" rel="noopener noreferrer">Открыть вакансию на hh.ru</a>
+                        <a href={job.url} target="_blank" rel="noopener noreferrer">Открыть вакансию на {job.sourcePlatform}</a>
                     </div>
 
                     {/* Right Column: Actions & Notes */}
-                    <div className="space-y-4">
+                    <div className="md:col-span-2 space-y-4">
                         <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
                             <h3 className="text-lg font-semibold mb-2">Инструменты ИИ</h3>
                             <div className="space-y-2">
@@ -147,14 +173,28 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                         </div>
                         
                          <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                            <h3 className="text-lg font-semibold mb-2">Заметки</h3>
-                             <textarea 
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                rows={8}
-                                placeholder="Добавьте ваши заметки..."
-                                className="w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            />
+                            <h3 className="text-lg font-semibold mb-2">История взаимодействия</h3>
+                            <div className="space-y-2 max-h-48 overflow-y-auto mb-3 pr-2">
+                                {job.history && [...job.history].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(item => (
+                                    <div key={item.id} className="text-xs p-2 bg-white dark:bg-slate-700 rounded">
+                                        <p className="font-semibold">{getInteractionIcon(item.type)} {new Date(item.timestamp).toLocaleString()}</p>
+                                        <p className="text-slate-600 dark:text-slate-300">{item.content}</p>
+                                    </div>
+                                ))}
+                                {!job.history?.length && <p className="text-xs text-slate-500">Здесь будет история ваших действий...</p>}
+                            </div>
+                             <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={newInteraction}
+                                    onChange={(e) => setNewInteraction(e.target.value)}
+                                    placeholder="Добавить заметку или лог звонка..."
+                                    className="flex-grow w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                />
+                                <button onClick={handleAddInteraction} className="p-2 text-primary-600 hover:text-primary-800 disabled:text-slate-400" disabled={!newInteraction.trim()}>
+                                    <PlusCircleIcon className="w-6 h-6"/>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </main>

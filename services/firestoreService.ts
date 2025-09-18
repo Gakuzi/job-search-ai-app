@@ -11,9 +11,9 @@ import {
     getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Profile, Job, SearchSettings, Prompts } from '../types';
+import type { Profile, Job, SearchSettings, Prompts, Platform } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_PROMPTS } from '../constants';
+import { DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS } from '../constants';
 
 
 // --- Profiles ---
@@ -32,17 +32,9 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                 name: data.name || '',
                 resume: data.resume || '',
                 settings: {
-                    positions: settings.positions || '',
-                    salary: settings.salary || 0,
-                    currency: settings.currency || 'RUB',
-                    location: settings.location || '',
-                    remote: typeof settings.remote === 'boolean' ? settings.remote : false,
-                    employment: Array.isArray(settings.employment) ? [...settings.employment] : [],
-                    schedule: Array.isArray(settings.schedule) ? [...settings.schedule] : [],
-                    skills: settings.skills || '',
-                    keywords: settings.keywords || '',
-                    minCompanyRating: settings.minCompanyRating || 0,
-                    limit: settings.limit || 0,
+                    ...DEFAULT_SEARCH_SETTINGS,
+                    ...settings,
+                    platforms: Array.isArray(settings.platforms) ? settings.platforms : DEFAULT_SEARCH_SETTINGS.platforms,
                 },
                 prompts: {
                     jobSearch: prompts.jobSearch || DEFAULT_PROMPTS.jobSearch,
@@ -106,6 +98,7 @@ export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void)
                 requirements: Array.isArray(data.requirements) ? [...data.requirements] : [],
                 matchAnalysis: data.matchAnalysis || '',
                 url: data.url || '',
+                sourcePlatform: data.sourcePlatform || 'Неизвестно',
                 contacts: {
                     email: contacts.email,
                     phone: contacts.phone,
@@ -113,6 +106,7 @@ export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void)
                 },
                 kanbanStatus: data.kanbanStatus || 'new',
                 notes: data.notes || undefined,
+                history: Array.isArray(data.history) ? data.history : [],
                 profileId: data.profileId || '',
                 userId: data.userId || '',
             };

@@ -8,9 +8,10 @@ interface ApplicationCardProps {
     onViewDetails: (job: Job) => void;
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
+    onQuickApplyEmail: (job: Job) => void;
 }
 
-const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, onViewDetails, onAdaptResume, onGenerateEmail }) => {
+const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, onViewDetails, onAdaptResume, onGenerateEmail, onQuickApplyEmail }) => {
     
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
         e.dataTransfer.setData('jobId', job.id);
@@ -29,6 +30,14 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, onViewDetails, o
             className="p-3 bg-white dark:bg-slate-700 rounded-md shadow-sm cursor-pointer hover:shadow-md hover:bg-slate-50 dark:hover:bg-slate-600 transition-all border-l-4 border-primary-500 group relative"
         >
              <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                 <button
+                    onClick={(e) => handleActionClick(e, () => onQuickApplyEmail(job))}
+                    className="p-1 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-900 hover:text-blue-500 disabled:opacity-50"
+                    title="Быстрый отклик по Email"
+                    disabled={!job.contacts?.email}
+                >
+                    <MailIcon className="w-4 h-4" />
+                </button>
                 <button
                     onClick={(e) => handleActionClick(e, () => onAdaptResume(job))}
                     className="p-1 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-900 hover:text-primary-500"
@@ -36,19 +45,13 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, onViewDetails, o
                 >
                     <PencilSquareIcon className="w-4 h-4" />
                 </button>
-                <button
-                    onClick={(e) => handleActionClick(e, () => onGenerateEmail(job))}
-                    className="p-1 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-900 hover:text-primary-500"
-                    title="Создать сопроводительное письмо"
-                >
-                    <MailIcon className="w-4 h-4" />
-                </button>
             </div>
             
             <h4 className="font-semibold text-sm text-slate-800 dark:text-slate-200 truncate pr-10">{job.title}</h4>
             <p className="text-xs text-slate-600 dark:text-slate-400">{job.company}</p>
-            <div className="flex justify-between items-center mt-2">
+             <div className="flex justify-between items-center mt-2">
                 <p className="text-xs text-slate-500 dark:text-slate-400">{job.salary || 'З/П не указана'}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 font-medium truncate">{job.sourcePlatform}</p>
             </div>
         </div>
     );
