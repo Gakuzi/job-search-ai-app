@@ -1,14 +1,15 @@
 import React from 'react';
-import type { Job } from '../types';
+import type { Job, Profile } from '../types';
 import KanbanBoard from './KanbanBoard';
 
 interface ApplicationTrackerProps {
     jobs: Job[];
+    profiles: Profile[];
     onUpdateJob: (jobId: string, updates: Partial<Job>) => void;
     onJobClick: (job: Job) => void;
 }
 
-const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJob, onJobClick }) => {
+const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, profiles, onUpdateJob, onJobClick }) => {
     return (
         <div>
             <div className="mb-6">
@@ -17,6 +18,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJ
             </div>
             <KanbanBoard 
                 jobs={jobs}
+                profiles={profiles}
                 onUpdateJob={onUpdateJob}
                 onJobClick={onJobClick}
             />

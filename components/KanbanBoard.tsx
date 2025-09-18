@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import type { Job, KanbanStatus } from '../types';
+import type { Job, KanbanStatus, Profile } from '../types';
 import { kanbanStatusMap } from '../types';
 import ApplicationCard from './ApplicationCard';
 
 interface KanbanBoardProps {
     jobs: Job[];
+    profiles: Profile[];
     onUpdateJob: (jobId: string, updates: Partial<Job>) => void;
     onJobClick: (job: Job) => void;
 }
@@ -13,13 +14,14 @@ const KanbanColumn: React.FC<{
     status: KanbanStatus;
     title: string;
     jobs: Job[];
+    profiles: Profile[];
     onJobClick: (job: Job) => void;
     onDragStart: (e: React.DragEvent<HTMLDivElement>, jobId: string) => void;
     onDrop: (e: React.DragEvent<HTMLDivElement>, status: KanbanStatus) => void;
     isDraggingOver: boolean;
     onDragEnter: (e: React.DragEvent<HTMLDivElement>) => void;
     onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
-}> = ({ status, title, jobs, onJobClick, onDragStart, onDrop, isDraggingOver, onDragEnter, onDragLeave }) => {
+}> = ({ status, title, jobs, profiles, onJobClick, onDragStart, onDrop, isDraggingOver, onDragEnter, onDragLeave }) => {
     return (
         <div
             className={`flex-1 min-w-[280px] bg-slate-200/70 dark:bg-slate-800/70 rounded-lg p-3 transition-colors ${isDraggingOver ? 'bg-primary-100 dark:bg-primary-900/50' : ''}`}
@@ -34,6 +36,7 @@ const KanbanColumn: React.FC<{
                     <ApplicationCard
                         key={job.id}
                         job={job}
+                        profiles={profiles}
                         onClick={() => onJobClick(job)}
                         onDragStart={(e) => onDragStart(e, job.id)}
                     />
@@ -43,7 +46,7 @@ const KanbanColumn: React.FC<{
     );
 };
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJob, onJobClick }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, profiles, onUpdateJob, onJobClick }) => {
     const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<KanbanStatus | null>(null);
 
@@ -73,6 +76,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJob, onJobClick
     }
 
     const groupedJobs = useMemo(() => {
+        // Now grouping all jobs, not just for the active profile
         return (Object.keys(kanbanStatusMap) as KanbanStatus[]).reduce((acc, status) => {
             acc[status] = jobs.filter(job => job.kanbanStatus === status).sort((a,b) => a.title.localeCompare(b.title));
             return acc;
@@ -87,6 +91,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJob, onJobClick
                     status={status}
                     title={kanbanStatusMap[status]}
                     jobs={groupedJobs[status]}
+                    profiles={profiles}
                     onJobClick={onJobClick}
                     onDragStart={handleDragStart}
                     onDrop={handleDrop}

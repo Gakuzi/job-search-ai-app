@@ -51,6 +51,7 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                     jobSearch: prompts.jobSearch || '',
                     resumeAdapt: prompts.resumeAdapt || '',
                     coverLetter: prompts.coverLetter || '',
+                    hrResponseAnalysis: prompts.hrResponseAnalysis || '',
                 },
             };
             return cleanProfile;

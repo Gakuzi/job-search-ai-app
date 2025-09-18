@@ -12,6 +12,7 @@ import OnboardingModal from './components/OnboardingModal';
 import AuthGuard from './components/AuthGuard';
 import ApplicationTracker from './components/ApplicationTracker';
 import FirebaseConfigError from './components/FirebaseConfigError';
+import HrAnalysisModal from './components/HrAnalysisModal';
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS, DEFAULT_RESUME } from './constants';
@@ -20,6 +21,8 @@ import { auth, firebaseConfig } from './services/firebase';
 import * as firestoreService from './services/firestoreService';
 
 import type { Job, Profile, SearchSettings } from './types';
+import { kanbanStatusMap } from './types';
+
 
 // Проверка на наличие конфигурации Firebase
 const isFirebaseConfigured = () => {
@@ -41,6 +44,7 @@ function App() {
     const [message, setMessage] = useState('Добро пожаловать! Настройте параметры и начните поиск.');
 
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+    const [jobForHrAnalysis, setJobForHrAnalysis] = useState<Job | null>(null);
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
     const [actionModalTitle, setActionModalTitle] = useState('');
     const [actionModalContent, setActionModalContent] = useState('');
@@ -100,14 +104,7 @@ function App() {
     const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
         if (!activeProfile) return;
     
-        const tempDraft: Profile = {
-          id: activeProfile.id,
-          userId: activeProfile.userId,
-          name: activeProfile.name,
-          resume: activeProfile.resume,
-          settings: { ...activeProfile.settings },
-          prompts: { ...activeProfile.prompts },
-        };
+        const tempDraft: Profile = JSON.parse(JSON.stringify(activeProfile));
     
         updater(tempDraft);
     
@@ -221,6 +218,37 @@ function App() {
         }
     };
 
+    const handleOpenHrAnalysis = (job: Job) => {
+        setJobForHrAnalysis(job);
+    };
+
+    const handleCloseHrAnalysis = () => {
+        setJobForHrAnalysis(null);
+    };
+
+    const handleAnalyzeResponse = async (emailText: string) => {
+        if (!jobForHrAnalysis || !activeProfile) return;
+
+        handleCloseHrAnalysis();
+        openActionModal(`Анализ ответа для "${jobForHrAnalysis.title}"`);
+        setActionModalContent('Анализирую текст письма...');
+
+        try {
+            const suggestedStatus = await geminiService.analyzeHrResponse(
+                activeProfile.prompts.hrResponseAnalysis,
+                emailText
+            );
+            handleUpdateJob(jobForHrAnalysis.id, { kanbanStatus: suggestedStatus });
+            
+            setActionModalContent(`ИИ проанализировал ответ и рекомендует переместить вакансию в колонку "${kanbanStatusMap[suggestedStatus]}". Статус обновлен.`);
+
+        } catch (error) {
+             setActionModalContent(`Ошибка при анализе ответа: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
     const jobsForCurrentProfile = activeProfile ? jobs.filter(j => j.profileId === activeProfile.id) : [];
 
     if (!isFirebaseConfigured()) {
@@ -264,7 +292,8 @@ function App() {
                     )}
                     {view === 'applications' && activeProfile && (
                         <ApplicationTracker
-                            jobs={jobsForCurrentProfile}
+                            jobs={jobs}
+                            profiles={profiles}
                             onUpdateJob={handleUpdateJob}
                             onJobClick={setSelectedJob}
                         />
@@ -279,6 +308,7 @@ function App() {
                         onAdaptResume={handleAdaptResume}
                         onGenerateEmail={handleGenerateEmail}
                         onPrepareForInterview={handlePrepareForInterview}
+                        onAnalyzeResponse={handleOpenHrAnalysis}
                     />
                 )}
                  {isActionModalOpen && (
@@ -296,6 +326,13 @@ function App() {
                         onClose={() => {
                             if (profiles.length > 0) setShowOnboarding(false);
                         }}
+                    />
+                )}
+                 {jobForHrAnalysis && (
+                    <HrAnalysisModal
+                        job={jobForHrAnalysis}
+                        onClose={handleCloseHrAnalysis}
+                        onAnalyze={handleAnalyzeResponse}
                     />
                 )}
             </div>

@@ -6,6 +6,7 @@ import { XCircleIcon } from './icons/XCircleIcon';
 import { ClipboardIcon } from './icons/ClipboardIcon';
 import { SendIcon } from './icons/SendIcon';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
+import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
 
 interface JobDetailModalProps {
     job: Job;
@@ -14,6 +15,7 @@ interface JobDetailModalProps {
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
     onPrepareForInterview: (job: Job) => void;
+    onAnalyzeResponse: (job: Job) => void;
 }
 
 const JobDetailModal: React.FC<JobDetailModalProps> = ({ 
@@ -22,7 +24,8 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
     onUpdateJob,
     onAdaptResume,
     onGenerateEmail,
-    onPrepareForInterview
+    onPrepareForInterview,
+    onAnalyzeResponse,
 }) => {
     const [notes, setNotes] = useState(job.notes || '');
     const debouncedNotes = useDebounce(notes, 500);
@@ -90,6 +93,9 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                                 </button>
                                 <button onClick={() => onPrepareForInterview(job)} className="w-full btn-tool">
                                     <PencilSquareIcon className="w-4 h-4" /> К интервью
+                                </button>
+                                 <button onClick={() => onAnalyzeResponse(job)} className="w-full btn-tool border-t border-slate-200 dark:border-slate-700 pt-3 mt-2">
+                                    <ChatBubbleIcon className="w-4 h-4" /> Анализировать ответ HR
                                 </button>
                             </div>
                         </div>

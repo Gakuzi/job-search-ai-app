@@ -77,6 +77,7 @@ export interface Prompts {
     jobSearch: string;
     resumeAdapt: string;
     coverLetter: string;
+    hrResponseAnalysis: string;
 }
 
 export interface Profile {

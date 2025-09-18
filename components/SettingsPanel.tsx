@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Profile, SearchSettings } from '../types';
 import { AppStatus } from '../constants';
+import { useDebounce } from '../hooks/useDebounce';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
 import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
@@ -38,6 +39,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('search');
     const importInputRef = useRef<HTMLInputElement>(null);
+
+    const [profileName, setProfileName] = useState(activeProfile?.name || '');
+    const debouncedProfileName = useDebounce(profileName, 500);
+
+    useEffect(() => {
+        if (activeProfile) {
+            setProfileName(activeProfile.name);
+        }
+    }, [activeProfile]);
+
+    useEffect(() => {
+        if (debouncedProfileName && activeProfile && debouncedProfileName !== activeProfile.name) {
+            onUpdateProfile(draft => {
+                draft.name = debouncedProfileName;
+            });
+        }
+    }, [debouncedProfileName, activeProfile, onUpdateProfile]);
+
 
     if (!activeProfile) {
         return (
@@ -146,7 +165,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                          {activeTab === 'profiles' && (
                              <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
                                 <div>
-                                    <label htmlFor="profile-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Активный профиль</label>
+                                    <label htmlFor="profile-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Имя активного профиля</label>
+                                    <input 
+                                        id="profile-name"
+                                        type="text"
+                                        value={profileName}
+                                        onChange={(e) => setProfileName(e.target.value)}
+                                        className="w-full input-style"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="profile-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Переключить/Удалить профиль</label>
                                     <div className="flex flex-col sm:flex-row gap-2">
                                         <select id="profile-select" value={activeProfile.id || ''} onChange={(e) => onSwitchProfile(e.target.value)} className="flex-grow w-full input-style">
                                             {profiles.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
@@ -157,14 +186,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                         </div>
                                     </div>
                                 </div>
-                                {/* <div>
-                                     <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Управление данными</h3>
-                                     <div className="flex gap-2">
-                                        <button onClick={onExport} className="btn-secondary">Экспорт</button>
-                                        <input type="file" ref={importInputRef} onChange={onImport} accept=".json" className="hidden"/>
-                                        <button onClick={() => importInputRef.current?.click()} className="btn-secondary">Импорт</button>
-                                     </div>
-                                </div> */}
                             </div>
                         )}
                     </div>

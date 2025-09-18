@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings } from '../types';
+import type { Job, SearchSettings, KanbanStatus } from '../types';
 
 const getAiClient = () => {
     // Vite использует `import.meta.env` для доступа к переменным окружения
@@ -202,4 +202,25 @@ ${chatHistory}
         resume: parsedResult.resume,
         settings: parsedResult.settings,
     };
+};
+
+export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
+    const ai = getAiClient();
+    const prompt = `${promptTemplate}\n${emailText}`;
+    
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+    });
+    
+    const result = response.text.trim().toLowerCase();
+    
+    // Validate the response from AI
+    if (['new', 'tracking', 'interview', 'offer', 'archive'].includes(result)) {
+        return result as KanbanStatus;
+    }
+    
+    // Fallback or error
+    console.warn(`AI returned an unexpected status: '${result}'. Defaulting to 'tracking'.`);
+    return 'tracking';
 };
