@@ -230,7 +230,7 @@ function App() {
     
     const handleGoogleSignIn = () => {
         if (tokenClient) {
-            tokenClient.requestAccessToken({ prompt: '' });
+            tokenClient.requestAccessToken({ prompt: 'select_account' });
         } else {
             console.error("Google Token Client is not initialized yet.");
             setStatus(AppStatus.Error);
