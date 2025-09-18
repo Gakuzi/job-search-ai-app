@@ -155,17 +155,26 @@ function App() {
         setView('search');
 
         try {
+            const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
             const results = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings);
-            const jobsWithIds = results.map(job => ({
+            
+            const newJobs = results.filter(job => !existingJobUrls.has(job.url));
+
+            const jobsWithIds = newJobs.map(job => ({
                 ...job,
                 id: uuidv4(),
                 kanbanStatus: 'new' as KanbanStatus,
                 profileId: activeProfile.id,
                 userId: user!.uid,
             }));
+            
             setFoundJobs(jobsWithIds);
             setStatus(AppStatus.Success);
-            setMessage(`Найдено ${jobsWithIds.length} релевантных вакансий.`);
+             if (jobsWithIds.length > 0) {
+                setMessage(`Найдено ${jobsWithIds.length} новых релевантных вакансий.`);
+            } else {
+                setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
+            }
             setIsSettingsExpanded(false);
         } catch (error) {
             setStatus(AppStatus.Error);
@@ -318,12 +327,18 @@ function App() {
                                 jobs={foundJobs}
                                 onSaveJobs={handleSaveJobs}
                                 onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onAdaptResume={handleAdaptResume}
+                                onGenerateEmail={handleGenerateEmail}
                             />
                         ) : (
                             <ApplicationTracker
                                 jobs={jobs.filter(j => j.profileId === activeProfile.id)}
+                                profiles={profiles}
                                 onUpdateJobStatus={handleUpdateJobStatus}
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onAdaptResume={handleAdaptResume}
+                                onGenerateEmail={handleGenerateEmail}
                             />
                         )
                     ) : (

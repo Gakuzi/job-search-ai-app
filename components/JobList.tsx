@@ -6,9 +6,12 @@ interface JobListProps {
     jobs: Job[];
     onSaveJobs: (jobs: Job[]) => void;
     onDismissJob: (jobId: string) => void;
+    onViewDetails: (job: Job) => void;
+    onAdaptResume: (job: Job) => void;
+    onGenerateEmail: (job: Job) => void;
 }
 
-const JobList: React.FC<JobListProps> = ({ jobs, onSaveJobs, onDismissJob }) => {
+const JobList: React.FC<JobListProps> = ({ jobs, onSaveJobs, onDismissJob, onViewDetails, onAdaptResume, onGenerateEmail }) => {
     
     if (jobs.length === 0) {
         return (
@@ -40,6 +43,9 @@ const JobList: React.FC<JobListProps> = ({ jobs, onSaveJobs, onDismissJob }) => 
                         job={job}
                         onSave={handleSave}
                         onDismiss={onDismissJob}
+                        onViewDetails={onViewDetails}
+                        onAdaptResume={onAdaptResume}
+                        onGenerateEmail={onGenerateEmail}
                     />
                 ))}
             </div>

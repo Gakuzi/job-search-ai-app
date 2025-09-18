@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import type { Job, KanbanStatus } from '../types';
+import type { Job, KanbanStatus, Profile } from '../types';
 import { kanbanStatusMap } from '../types';
 import ApplicationCard from './ApplicationCard';
 
 interface KanbanBoardProps {
     jobs: Job[];
+    profiles: Profile[];
     onUpdateJobStatus: (jobId: string, newStatus: KanbanStatus) => void;
     onViewDetails: (job: Job) => void;
+    onAdaptResume: (job: Job) => void;
+    onGenerateEmail: (job: Job) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onViewDetails }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, profiles, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail }) => {
     const [draggedOverColumn, setDraggedOverColumn] = useState<KanbanStatus | null>(null);
     
     const columns: KanbanStatus[] = ['new', 'tracking', 'interview', 'offer', 'archive'];
@@ -62,7 +65,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onVi
                                 <ApplicationCard 
                                     key={job.id} 
                                     job={job} 
+                                    profiles={profiles}
                                     onViewDetails={onViewDetails}
+                                    onAdaptResume={onAdaptResume}
+                                    onGenerateEmail={onGenerateEmail}
                                 />
                         ))}
                     </div>
