@@ -133,7 +133,7 @@ function App() {
     }, []);
 
     const handleSearch = useCallback(async () => {
-        if (!activeProfile) return;
+        if (!activeProfile || !user) return;
         setStatus(AppStatus.Loading);
         setMessage('Ищу реальные вакансии на hh.ru и анализирую их для вас...');
         try {
@@ -143,18 +143,29 @@ function App() {
                 activeProfile.settings
             );
 
-            const newJobs: Job[] = results.map(job => ({
-                ...job,
-                id: uuidv4(),
-                kanbanStatus: 'new',
-                profileId: activeProfile.id,
-                userId: user!.uid,
-            }));
-            
-            await firestoreService.addJobsBatch(newJobs);
+            // Фильтрация дубликатов перед добавлением в базу
+            const existingUrls = new Set(
+                jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url)
+            );
 
-            setStatus(AppStatus.Success);
-            setMessage(`Отлично! Найдено ${newJobs.length} релевантных вакансий.`);
+            const newJobsFromSearch = results.filter(job => job.url && !existingUrls.has(job.url));
+
+            if (newJobsFromSearch.length > 0) {
+                 const newJobs: Job[] = newJobsFromSearch.map(job => ({
+                    ...job,
+                    id: uuidv4(),
+                    kanbanStatus: 'new',
+                    profileId: activeProfile.id,
+                    userId: user.uid,
+                }));
+                await firestoreService.addJobsBatch(newJobs);
+                setStatus(AppStatus.Success);
+                setMessage(`Отлично! Найдено ${newJobs.length} новых релевантных вакансий.`);
+            } else {
+                setStatus(AppStatus.Success);
+                setMessage('Новых вакансий не найдено. Все актуальные уже есть в вашем списке.');
+            }
+            
             setIsSettingsExpanded(false);
         } catch (error) {
             console.error(error);
@@ -162,7 +173,7 @@ function App() {
             setStatus(AppStatus.Error);
             setMessage(`Ошибка: ${errorMessage}`);
         }
-    }, [activeProfile, user]);
+    }, [activeProfile, user, jobs]);
     
     const openActionModal = (title: string) => {
         setIsActionModalOpen(true);

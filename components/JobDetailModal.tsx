@@ -74,7 +74,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                             {job.requirements.map((item, index) => <li key={index}>{item}</li>)}
                         </ul>
                         <p><strong>Рейтинг компании:</strong> ⭐ {job.companyRating}/5 - <em>{job.companyReviewSummary}</em></p>
-                        <a href={job.url} target="_blank" rel="noopener noreferrer">Источник (симуляция)</a>
+                        <a href={job.url} target="_blank" rel="noopener noreferrer">Открыть вакансию на hh.ru</a>
                     </div>
 
                     {/* Right Column: Actions & Notes */}
