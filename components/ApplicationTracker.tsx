@@ -2,6 +2,7 @@ import React from 'react';
 import type { Job, KanbanStatus, Profile } from '../types';
 import KanbanBoard from './KanbanBoard';
 import { GoogleIcon } from './icons/GoogleIcon';
+import { ArrowPathIcon } from './icons/ArrowPathIcon';
 
 interface ApplicationTrackerProps {
     jobs: Job[];
@@ -14,6 +15,7 @@ interface ApplicationTrackerProps {
     isGoogleConnected: boolean;
     isGapiReady: boolean;
     onScanReplies: () => void;
+    onRefreshStatuses: () => void;
 }
 
 const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ 
@@ -25,7 +27,8 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
     onQuickApplyEmail,
     isGoogleConnected, 
     isGapiReady, 
-    onScanReplies 
+    onScanReplies,
+    onRefreshStatuses,
 }) => {
     if (jobs.length === 0) {
         return (
@@ -40,7 +43,15 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
 
     return (
         <div>
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 flex justify-end gap-2">
+                 <button
+                    onClick={onRefreshStatuses}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Проверить, активны ли отслеживаемые вакансии"
+                >
+                    <ArrowPathIcon className="w-5 h-5"/>
+                    Обновить статусы
+                </button>
                 <button
                     onClick={onScanReplies}
                     disabled={!isGoogleConnected || !isGapiReady}

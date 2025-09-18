@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -35,7 +32,8 @@ import {
     generateShortMessage,
     matchEmailToJob,
     suggestPlatforms,
-    analyzeAndRankJobs
+    analyzeAndRankJobs,
+    checkJobStatus,
 } from './services/geminiService';
 import { findJobsOnAvitoAPI } from './services/avitoService';
 import { auth, firebaseConfig } from './services/firebase';
@@ -425,6 +423,44 @@ function App() {
         handleAddInteraction(jobId, 'status_change', `Статус изменен на "${kanbanStatusMap[newStatus]}"`);
     };
 
+    const handleRefreshJobStatuses = async () => {
+        if (!activeProfile) return;
+
+        const jobsToUpdate = jobs.filter(j =>
+            j.profileId === activeProfile.id &&
+            (j.kanbanStatus === 'tracking' || j.kanbanStatus === 'interview')
+        );
+
+        if (jobsToUpdate.length === 0) {
+            setMessage("Нет активных вакансий для проверки.");
+            setStatus(AppStatus.Success);
+            return;
+        }
+
+        setStatus(AppStatus.Loading);
+        setMessage(`Проверяю статусы ${jobsToUpdate.length} вакансий... (0/${jobsToUpdate.length})`);
+
+        let archivedCount = 0;
+        for (let i = 0; i < jobsToUpdate.length; i++) {
+            const job = jobsToUpdate[i];
+            setMessage(`Проверяю статусы ${jobsToUpdate.length} вакансий... (${i + 1}/${jobsToUpdate.length}) - ${job.title}`);
+            try {
+                const status = await checkJobStatus(job.url);
+                if (status === 'archived') {
+                    handleUpdateJob(job.id, { kanbanStatus: 'archive' });
+                    handleAddInteraction(job.id, 'status_change', `Статус автоматически изменен на "Архив" (вакансия закрыта)`);
+                    archivedCount++;
+                }
+            } catch (error) {
+                console.error(`Failed to check status for job ${job.id}:`, error);
+                // Continue to the next job
+            }
+        }
+
+        setStatus(AppStatus.Success);
+        setMessage(`Проверка завершена. ${archivedCount} вакансий перемещено в архив.`);
+    };
+
     // --- AI Actions ---
 
     const runAiAction = async (title: string, action: () => Promise<string>) => {
@@ -506,7 +542,7 @@ function App() {
             setMessage(`Статус вакансии "${job.title}" обновлен на "${kanbanStatusMap[newStatus]}".`);
         } catch (error) {
             setStatus(AppStatus.Error);
-            setMessage(error instanceof Error ? error.message : 'Произошла ошибка.');
+            setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
         }
     };
     
@@ -764,6 +800,7 @@ function App() {
                             isGoogleConnected={isGoogleConnected}
                             isGapiReady={isGapiReady}
                             onScanReplies={handleOpenGmailScanner}
+                            onRefreshStatuses={handleRefreshJobStatuses}
                         />
                     ) : (
                         <ScanResults

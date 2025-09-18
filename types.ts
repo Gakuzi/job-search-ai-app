@@ -17,8 +17,9 @@ export interface SearchSettings {
     skills: string;
     keywords: string;
     minCompanyRating: number;
-    limit: number;
     platforms: Platform[];
+    // FIX: Add 'limit' property to support Avito API calls which require a result limit.
+    limit: number;
 }
 
 export type KanbanStatus = 'new' | 'tracking' | 'interview' | 'offer' | 'archive';
