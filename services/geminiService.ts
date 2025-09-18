@@ -24,21 +24,43 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
     }
 };
 
-export const searchJobs = async (promptTemplate: string, resume: string, settings: SearchSettings): Promise<Job[]> => {
+export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings): Promise<Job[]> => {
     const ai = getAiClient();
-    const prompt = promptTemplate
-      .replace('{limit}', String(settings.limit))
-      .replace('{location}', settings.location)
-      .replace('{minCompanyRating}', String(settings.minCompanyRating));
-
-    const fullPrompt = `${prompt}\n\n## Резюме кандидата:\n${resume}\n\n## Критерии поиска:\n${JSON.stringify(settings, null, 2)}`;
     
+    // 1. Construct search URL for a real job site (e.g., hh.ru)
+    const query = encodeURIComponent(`${settings.positions} ${settings.location}`);
+    // Using a CORS proxy to fetch data from the client-side as per the tech spec
+    const searchUrl = `https://hh.ru/search/vacancy?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`; // area 113 is Russia
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+
+    // 2. Fetch the HTML content of the search results page
+    let htmlContent: string;
+    try {
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+            throw new Error(`Ошибка сети при запросе к прокси: ${response.statusText}`);
+        }
+        const data = await response.json();
+        htmlContent = data.contents;
+        if (!htmlContent) {
+            throw new Error('Не удалось получить HTML-контент со страницы поиска.');
+        }
+    } catch (error) {
+        console.error("Error fetching job page HTML:", error);
+        throw new Error(`Не удалось загрузить страницу с вакансиями. Возможно, сайт-источник или прокси недоступен. ${error.message}`);
+    }
+
+    // 3. Use Gemini to parse the HTML and extract job data
+    const prompt = promptTemplate.replace('{limit}', String(settings.limit));
+    const fullPrompt = `${prompt}\n\n## Резюме кандидата для анализа:\n${resume}\n\n## HTML-КОД ДЛЯ ПАРСИНГА:\n${htmlContent}`;
+
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: fullPrompt,
         config: {
             responseMimeType: "application/json",
-            responseSchema: {
+            // The schema guides the model to produce the correct JSON structure.
+             responseSchema: {
                 type: Type.ARRAY,
                 items: {
                     type: Type.OBJECT,
@@ -54,15 +76,6 @@ export const searchJobs = async (promptTemplate: string, resume: string, setting
                         requirements: { type: Type.ARRAY, items: { type: Type.STRING } },
                         matchAnalysis: { type: Type.STRING },
                         url: { type: Type.STRING },
-                         contacts: { 
-                            type: Type.OBJECT,
-                            properties: {
-                                email: { type: Type.STRING },
-                                phone: { type: Type.STRING },
-                                telegram: { type: Type.STRING },
-                            },
-                            nullable: true,
-                        },
                     },
                     required: ["title", "company", "salary", "location", "description", "matchAnalysis", "url"]
                 }
@@ -70,7 +83,6 @@ export const searchJobs = async (promptTemplate: string, resume: string, setting
         }
     });
 
-    // The response.text is already a clean JSON string due to responseSchema
     return JSON.parse(response.text) as Job[];
 };
 

@@ -135,9 +135,9 @@ function App() {
     const handleSearch = useCallback(async () => {
         if (!activeProfile) return;
         setStatus(AppStatus.Loading);
-        setMessage('ИИ подбирает для вас лучшие вакансии...');
+        setMessage('Ищу реальные вакансии на hh.ru и анализирую их для вас...');
         try {
-            const results = await geminiService.searchJobs(
+            const results = await geminiService.findJobsOnRealWebsite(
                 activeProfile.prompts.jobSearch,
                 activeProfile.resume,
                 activeProfile.settings
@@ -154,7 +154,7 @@ function App() {
             await firestoreService.addJobsBatch(newJobs);
 
             setStatus(AppStatus.Success);
-            setMessage(`Отлично! Найдено ${newJobs.length} новых вакансий.`);
+            setMessage(`Отлично! Найдено ${newJobs.length} релевантных вакансий.`);
             setIsSettingsExpanded(false);
         } catch (error) {
             console.error(error);
