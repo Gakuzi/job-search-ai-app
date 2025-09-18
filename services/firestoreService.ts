@@ -14,18 +14,15 @@ import {
     serverTimestamp,
     getDoc,
 } from 'firebase/firestore';
-import { app } from './firebase';
+import { db } from './firebase';
 // FIX: Corrected import path for types
 import type { Profile, Job, Interaction } from '../types';
-
-const db = getFirestore(app);
-
-const profilesCollection = collection(db, 'profiles');
-const jobsCollection = collection(db, 'jobs');
 
 // --- Profiles ---
 
 export const getProfiles = (userId: string, onUpdate: (profiles: Profile[]) => void): Unsubscribe => {
+    if (!db) return () => {};
+    const profilesCollection = collection(db, 'profiles');
     const q = query(profilesCollection, where('userId', '==', userId));
     return onSnapshot(q, (querySnapshot) => {
         const profiles: Profile[] = [];
@@ -37,6 +34,8 @@ export const getProfiles = (userId: string, onUpdate: (profiles: Profile[]) => v
 };
 
 export const addProfile = async (userId: string, profileData: Omit<Profile, 'id' | 'userId'>): Promise<string> => {
+    if (!db) throw new Error("Firestore is not initialized.");
+    const profilesCollection = collection(db, 'profiles');
     const docRef = await addDoc(profilesCollection, {
         ...profileData,
         userId,
@@ -45,21 +44,24 @@ export const addProfile = async (userId: string, profileData: Omit<Profile, 'id'
 };
 
 export const updateProfile = async (profileId: string, updates: Partial<Profile>): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     const profileDoc = doc(db, 'profiles', profileId);
     await updateDoc(profileDoc, updates);
 };
 
 export const deleteProfile = async (profileId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     await deleteDoc(doc(db, 'profiles', profileId));
 };
 
 // --- Jobs ---
 
 export const getJobs = (userId: string, profileId: string, onUpdate: (jobs: Job[]) => void): Unsubscribe => {
-    if (!userId || !profileId) {
+    if (!db || !userId || !profileId) {
         onUpdate([]);
         return () => {}; // Return an empty unsubscribe function
     }
+    const jobsCollection = collection(db, 'jobs');
     const q = query(jobsCollection, where('userId', '==', userId), where('profileId', '==', profileId));
     return onSnapshot(q, (querySnapshot) => {
         const jobs: Job[] = [];
@@ -77,6 +79,8 @@ export const getJobs = (userId: string, profileId: string, onUpdate: (jobs: Job[
 };
 
 export const addJob = async (userId: string, profileId: string, jobData: Omit<Job, 'id' | 'userId' | 'profileId'>): Promise<string> => {
+    if (!db) throw new Error("Firestore is not initialized.");
+    const jobsCollection = collection(db, 'jobs');
     const docRef = await addDoc(jobsCollection, {
         ...jobData,
         userId,
@@ -87,6 +91,7 @@ export const addJob = async (userId: string, profileId: string, jobData: Omit<Jo
 };
 
 export const addJobsBatch = async (userId: string, profileId: string, jobsData: Omit<Job, 'id' | 'userId' | 'profileId'>[]): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     // Firestore batch writes are more efficient for multiple additions.
     // However, for simplicity here, we'll just loop. A real implementation should use `writeBatch`.
     for (const jobData of jobsData) {
@@ -95,11 +100,13 @@ export const addJobsBatch = async (userId: string, profileId: string, jobsData: 
 };
 
 export const updateJob = async (jobId: string, updates: Partial<Job>): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     const jobDoc = doc(db, 'jobs', jobId);
     await updateDoc(jobDoc, updates);
 };
 
 export const addJobInteraction = async (jobId: string, interaction: Interaction): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     const jobRef = doc(db, 'jobs', jobId);
     const jobSnap = await getDoc(jobRef);
     if(jobSnap.exists()){
@@ -111,5 +118,6 @@ export const addJobInteraction = async (jobId: string, interaction: Interaction)
 
 
 export const deleteJob = async (jobId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore is not initialized.");
     await deleteDoc(doc(db, 'jobs', jobId));
 };

@@ -15,6 +15,10 @@ const Auth: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!auth) {
+            setError("Ошибка конфигурации. Не удалось подключиться к сервису аутентификации.");
+            return;
+        }
         setLoading(true);
         setError('');
         try {
