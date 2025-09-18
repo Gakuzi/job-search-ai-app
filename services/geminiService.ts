@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
+import type { Job, SearchSettings, KanbanStatus, Platform, Profile } from '../types';
 import { getActiveApiKey, rotateApiKey } from './apiKeyService';
 
 // --- API Key Management and Error Handling ---
@@ -80,7 +80,7 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
 
 // --- Core AI Services ---
 
-export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings, platform: Platform): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId'>[]> => {
+export const findJobsOnRealWebsite = async (promptTemplate: string, settings: SearchSettings, platform: Platform): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes'>[]> => {
     const query = encodeURIComponent(`${settings.positions} ${settings.location}`);
     const searchUrl = `${platform.url}?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`;
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
@@ -98,7 +98,7 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
     }
 
     const prompt = promptTemplate.replace('{limit}', String(settings.limit));
-    const fullPrompt = `${prompt}\n\n## Резюме кандидата для анализа:\n${resume}\n\n## HTML-КОД ДЛЯ ПАРСИНГА:\n${htmlContent}`;
+    const fullPrompt = `${prompt}\n\n## HTML-КОД ДЛЯ ПАРСИНГА:\n${htmlContent}`;
 
     const responseText = await runAiOperation(async (ai) => {
         const response = await ai.models.generateContent({
@@ -120,7 +120,6 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
                             description: { type: Type.STRING },
                             responsibilities: { type: Type.ARRAY, items: { type: Type.STRING } },
                             requirements: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            matchAnalysis: { type: Type.STRING },
                             url: { type: Type.STRING },
                             contacts: {
                                 type: Type.OBJECT,
@@ -132,17 +131,57 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
                                  nullable: true,
                             },
                         },
-                        required: ["title", "company", "salary", "location", "description", "matchAnalysis", "url"]
+                        required: ["title", "company", "salary", "location", "description", "url"]
                     }
                 }
             }
         });
         return response.text;
     });
-
-    const parsedJobs = JSON.parse(responseText) as Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'sourcePlatform'>[];
+    
+    type RawJob = Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes' | 'sourcePlatform' | 'matchAnalysis'>;
+    const parsedJobs = JSON.parse(responseText) as RawJob[];
     return parsedJobs.map(job => ({ ...job, sourcePlatform: platform.name }));
 };
+
+
+export const analyzeAndRankJobs = async (jobs: Job[], profile: Profile): Promise<Job[]> => {
+    if (jobs.length === 0) return [];
+
+    const resultText = await runAiOperation(async (ai) => {
+        const prompt = `
+# ЗАДАЧА: АНАЛИЗ СПИСКА ВАКАНСИЙ
+Ты — AI-ассистент, который помогает соискателю найти лучшие вакансии.
+Тебе предоставлено резюме кандидата и список вакансий в формате JSON.
+Твоя задача — для КАЖДОЙ вакансии в списке написать краткий (1-2 предложения) анализ ('matchAnalysis'), почему эта вакансия подходит кандидату, основываясь на его резюме и описании вакансии.
+
+# ВХОДНЫЕ ДАННЫЕ:
+1.  **Резюме кандидата:** ${profile.resume}
+2.  **Список вакансий:** ${JSON.stringify(jobs)}
+
+# ИНСТРУКЦИИ:
+1.  Проанализируй каждую вакансию из списка.
+2.  Добавь в каждый объект вакансии новое поле \`matchAnalysis\` с твоим анализом.
+3.  Если вакансия совсем не подходит, оставь \`matchAnalysis\` пустым ("").
+4.  Верни ПОЛНЫЙ ИСХОДНЫЙ МАССИВ вакансий, но с добавленным полем \`matchAnalysis\`.
+
+# ВАЖНО:
+-   Вывод должен быть СТРОГО JSON-массивом, без каких-либо комментариев или \`\`\`json ... \`\`\` оберток.
+-   Сохрани все остальные поля в объектах вакансий без изменений.
+`;
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+        return response.text;
+    });
+
+    return parseJsonResponse<Job[]>(resultText, 'анализа и ранжирования вакансий');
+};
+
 
 export async function* adaptResume(promptTemplate: string, resume: string, job: Job): AsyncGenerator<string> {
     const prompt = promptTemplate
@@ -239,7 +278,7 @@ export const extractProfileDataFromResume = async (resumeText: string): Promise<
     *   \`location\` (string): Город.
     *   \`skills\` (string): Ключевые навыки и технологии через запятую.
 
-2.  **profileName**: Создай короткое название для профиля в формате "[Имя Фамилия] - [Основная должность]". Извлеки имя и должность из резюме.
+2.  **profileName**: Создай информативное название для профиля в формате "[Имя Фамилия] - [Основная должность] (от [Зарплата] [Валюта])". Извлеки данные из резюме. Если зарплата 0, не включай ее в название.
 
 Текст резюме для анализа:
 ---

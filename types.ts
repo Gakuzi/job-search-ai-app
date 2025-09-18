@@ -40,7 +40,7 @@ export interface Job {
     description: string;
     responsibilities: string[];
     requirements: string[];
-    matchAnalysis: string;
+    matchAnalysis?: string;
     url: string;
     sourcePlatform: string;
     contacts?: {

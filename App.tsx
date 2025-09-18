@@ -31,7 +31,8 @@ import {
     analyzeHrResponse,
     generateShortMessage,
     matchEmailToJob,
-    suggestPlatforms
+    suggestPlatforms,
+    analyzeAndRankJobs
 } from './services/geminiService';
 import { auth, firebaseConfig } from './services/firebase';
 import {
@@ -308,10 +309,10 @@ function App() {
     // --- Job Search & Management ---
 
     const handleSearch = async () => {
-        if (!activeProfile) return;
+        if (!activeProfile || !user) return;
 
         setStatus(AppStatus.Loading);
-        setMessage('Анализирую ваш профиль и резюме...');
+        setMessage('Начинаю сбор вакансий...');
         
         setFoundJobs([]);
         setView('scanResults');
@@ -325,15 +326,15 @@ function App() {
             }
 
             const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
-            let allResults: Job[] = [];
+            let allRawResults: Job[] = [];
             
             for (let i = 0; i < enabledPlatforms.length; i++) {
                 const platform = enabledPlatforms[i];
-                setMessage(`Этап ${i + 1}/${enabledPlatforms.length}: ИИ сканирует ${platform.name}...`);
-                const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings, platform);
+                setMessage(`Этап ${i + 1}/${enabledPlatforms.length}: Сканирую ${platform.name}...`);
+                const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.settings, platform);
                 
                 const newJobsFromPlatform = platformResults
-                    .filter(job => !existingJobUrls.has(job.url) && !allResults.some(r => r.url === job.url))
+                    .filter(job => !existingJobUrls.has(job.url) && !allRawResults.some(r => r.url === job.url))
                     .map(job => ({
                         ...job,
                         id: uuidv4(),
@@ -343,16 +344,24 @@ function App() {
                         history: [],
                     }));
                 
-                allResults = [...allResults, ...newJobsFromPlatform];
-                setFoundJobs([...allResults]); // Update UI incrementally
+                allRawResults = [...allRawResults, ...newJobsFromPlatform];
+                setFoundJobs([...allRawResults]);
             }
 
-            setMessage(`Сканирование завершено. Найдено ${allResults.length} новых вакансий. ИИ проводит финальный анализ...`);
+            if (allRawResults.length === 0) {
+                setMessage('Новых вакансий не найдено. Попробуйте изменить параметры поиска или добавить больше площадок в настройках.');
+                setStatus(AppStatus.Success);
+                return;
+            }
+
+            setMessage(`Сбор завершен. Найдено ${allRawResults.length} вакансий. ИИ проводит анализ на соответствие...`);
+            
+            const analyzedJobs = await analyzeAndRankJobs(allRawResults, activeProfile);
+            setFoundJobs(analyzedJobs);
+
+            setMessage(`Анализ завершен. ${analyzedJobs.filter(j => j.matchAnalysis).length} вакансий рекомендовано.`);
             setStatus(AppStatus.Success);
             
-            if (allResults.length === 0) {
-                setMessage('Новых вакансий не найдено. Попробуйте изменить параметры поиска или добавить больше площадок в настройках.');
-            }
 
         } catch (error) {
             setStatus(AppStatus.Error);
