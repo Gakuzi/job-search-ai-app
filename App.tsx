@@ -49,9 +49,13 @@ const DEFAULT_PROMPTS: PromptTemplate[] = [
     { id: 'cover_letter', name: 'Сопроводительное письмо', description: 'Генерирует сопроводительное письмо для отклика', template: "Напиши сопроводительное письмо для отклика на вакансию. Письмо должно быть профессиональным, вежливым и кратким (3-4 абзаца). Используй информацию из резюме кандидата, чтобы показать его релевантность. Обращайся к HR-менеджеру компании. Если имя неизвестно, используй 'Уважаемый HR-менеджер'. В конце вырази готовность пройти собеседование. Ответ должен быть только текстом письма.\n\nРезюме кандидата:\n---\n{{profile.resume}}\n---\n\nВакансия:\n---\nДолжность: {{job.title}}\nКомпания: {{job.company}}\nОписание: {{job.description}}\n---" },
 ];
 
-const App: React.FC = () => {
+
+// This component contains the main application logic and is only rendered when Firebase is configured.
+// This prevents hooks like useAuthState from being called with a null `auth` object.
+const MainApplication: React.FC = () => {
     const [theme, setTheme] = useTheme();
-    const [user, loadingAuth] = useAuthState(auth);
+    // This hook is now safe because MainApplication is only rendered when auth is initialized.
+    const [user, loadingAuth] = useAuthState(auth!);
 
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
     const [statusMessage, setStatusMessage] = useState('');
@@ -75,7 +79,6 @@ const App: React.FC = () => {
     const [promptTemplates, setPromptTemplates] = useLocalStorage<PromptTemplate[]>('promptTemplates', DEFAULT_PROMPTS);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
-    // FIX: Use the new `isConnected` helper from the googleAuthService to check the connection status. This resolves the TypeScript error.
     const isGoogleConnected = gAuth.isConnected();
 
     useEffect(() => {
@@ -138,7 +141,9 @@ const App: React.FC = () => {
     }, []);
 
     const handleLogout = () => {
-        signOut(auth);
+        if (auth) {
+            signOut(auth);
+        }
         setActiveProfileId(null);
     };
 
@@ -284,10 +289,6 @@ const App: React.FC = () => {
     const handleUpdatePrompt = (id: string, newTemplate: string) => {
         setPromptTemplates(prev => prev.map(p => p.id === id ? { ...p, template: newTemplate } : p));
     };
-
-    if (!isFirebaseConfigured || !isGoogleConfigured) {
-        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
-    }
     
     return (
         <AuthGuard user={user} loading={loadingAuth}>
@@ -412,6 +413,14 @@ const App: React.FC = () => {
             </div>
         </AuthGuard>
     );
+}
+
+const App: React.FC = () => {
+    if (!isFirebaseConfigured || !isGoogleConfigured) {
+        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
+    }
+    
+    return <MainApplication />;
 };
 
 export default App;
