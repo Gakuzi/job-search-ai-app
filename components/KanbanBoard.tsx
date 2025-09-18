@@ -5,6 +5,8 @@ import ApplicationCard from './ApplicationCard';
 
 interface KanbanBoardProps {
     jobs: Job[];
+    selectedJobIds: Set<string>;
+    setSelectedJobIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     onUpdateJobStatus: (jobId: string, newStatus: KanbanStatus) => void;
     onViewDetails: (job: Job) => void;
     onAdaptResume: (job: Job) => void;
@@ -12,7 +14,16 @@ interface KanbanBoardProps {
     onQuickApplyEmail: (job: Job) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail, onQuickApplyEmail }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ 
+    jobs, 
+    selectedJobIds, 
+    setSelectedJobIds, 
+    onUpdateJobStatus, 
+    onViewDetails, 
+    onAdaptResume, 
+    onGenerateEmail, 
+    onQuickApplyEmail 
+}) => {
     const [draggedOverColumn, setDraggedOverColumn] = useState<KanbanStatus | null>(null);
     
     const columns: KanbanStatus[] = ['new', 'tracking', 'interview', 'offer', 'archive'];
@@ -65,6 +76,16 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ jobs, onUpdateJobStatus, onVi
                                 <ApplicationCard 
                                     key={job.id} 
                                     job={job}
+                                    isSelected={selectedJobIds.has(job.id)}
+                                    onSelect={(jobId) => setSelectedJobIds(prev => {
+                                        const newSet = new Set(prev);
+                                        if (newSet.has(jobId)) {
+                                            newSet.delete(jobId);
+                                        } else {
+                                            newSet.add(jobId);
+                                        }
+                                        return newSet;
+                                    })}
                                     onViewDetails={onViewDetails}
                                     onAdaptResume={onAdaptResume}
                                     onGenerateEmail={onGenerateEmail}

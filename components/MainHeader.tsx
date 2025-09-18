@@ -2,24 +2,16 @@ import React from 'react';
 import { AppStatus } from '../constants';
 import { SparklesIcon } from './icons/SparklesIcon';
 
-type View = 'scanResults' | 'applications';
-
 interface MainHeaderProps {
-    view: View;
     onSearch: () => void;
     status: AppStatus;
 }
 
-const viewTitles: Record<View, string> = {
-    applications: 'Мои Отклики',
-    scanResults: 'Результаты Поиска',
-};
-
-const MainHeader: React.FC<MainHeaderProps> = ({ view, onSearch, status }) => {
+const MainHeader: React.FC<MainHeaderProps> = ({ onSearch, status }) => {
     return (
         <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
             <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                {viewTitles[view]}
+                Мои Отклики
             </h1>
             <button
                 onClick={onSearch}

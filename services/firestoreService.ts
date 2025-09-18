@@ -1,141 +1,114 @@
 import {
+    getFirestore,
     collection,
     query,
     where,
-    onSnapshot,
+    getDocs,
     addDoc,
+    doc,
     updateDoc,
     deleteDoc,
-    doc,
-    writeBatch,
-    getDocs,
+    onSnapshot,
+    Unsubscribe,
+    Timestamp,
+    serverTimestamp,
+    getDoc,
 } from 'firebase/firestore';
-import { db } from './firebase';
-import type { Profile, Job, SearchSettings, Prompts } from '../types';
-import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS, DEFAULT_RESUME } from '../constants';
+import { app } from './firebase';
+import type { Profile, Job, Interaction } from '../types';
 
+const db = getFirestore(app);
+
+const profilesCollection = collection(db, 'profiles');
+const jobsCollection = collection(db, 'jobs');
 
 // --- Profiles ---
 
-export const subscribeToProfiles = (userId: string, callback: (profiles: Profile[]) => void) => {
-    const q = query(collection(db, 'profiles'), where('userId', '==', userId));
-    return onSnapshot(q, (snapshot) => {
-        const profiles = snapshot.docs.map(doc => {
-            const data = doc.data() || {};
-            const settings: Partial<SearchSettings> = data.settings || {};
-            const prompts: Partial<Prompts> = data.prompts || {};
-
-            const cleanProfile: Profile = {
-                id: doc.id,
-                userId: data.userId || '',
-                name: data.name || '',
-                resume: data.resume || DEFAULT_RESUME,
-                settings: {
-                    ...DEFAULT_SEARCH_SETTINGS,
-                    ...settings,
-                    platforms: Array.isArray(settings.platforms) && settings.platforms.length > 0
-                        ? settings.platforms
-                        : DEFAULT_SEARCH_SETTINGS.platforms,
-                },
-                prompts: {
-                    ...DEFAULT_PROMPTS,
-                    ...prompts,
-                },
-                // Load API keys from Firestore profile
-                geminiApiKeys: Array.isArray(data.geminiApiKeys) ? data.geminiApiKeys : [],
-                activeGeminiApiKeyIndex: typeof data.activeGeminiApiKeyIndex === 'number' ? data.activeGeminiApiKeyIndex : 0,
-                avitoClientId: data.avitoClientId || '',
-                avitoClientSecret: data.avitoClientSecret || '',
-            };
-            return cleanProfile;
+export const getProfiles = (userId: string, onUpdate: (profiles: Profile[]) => void): Unsubscribe => {
+    const q = query(profilesCollection, where('userId', '==', userId));
+    return onSnapshot(q, (querySnapshot) => {
+        const profiles: Profile[] = [];
+        querySnapshot.forEach((doc) => {
+            profiles.push({ id: doc.id, ...doc.data() } as Profile);
         });
-        callback(profiles);
+        onUpdate(profiles);
     });
 };
 
-
-export const addProfile = async (profileData: Omit<Profile, 'id'>): Promise<Profile> => {
-    const docRef = await addDoc(collection(db, 'profiles'), profileData);
-    return { id: docRef.id, ...profileData };
-};
-
-export const updateProfile = (profile: Profile) => {
-    const { id, ...data } = profile;
-    return updateDoc(doc(db, 'profiles', id), data);
-};
-
-export const deleteProfile = async (profileId: string) => {
-    // Also delete associated jobs
-    const jobsQuery = query(collection(db, 'jobs'), where('profileId', '==', profileId));
-    const jobsSnapshot = await getDocs(jobsQuery);
-    const batch = writeBatch(db);
-    jobsSnapshot.forEach(jobDoc => {
-        batch.delete(doc(db, 'jobs', jobDoc.id));
+export const addProfile = async (userId: string, profileData: Omit<Profile, 'id' | 'userId'>): Promise<string> => {
+    const docRef = await addDoc(profilesCollection, {
+        ...profileData,
+        userId,
     });
-    await batch.commit();
+    return docRef.id;
+};
 
-    // Delete the profile itself
-    return deleteDoc(doc(db, 'profiles', profileId));
+export const updateProfile = async (profileId: string, updates: Partial<Profile>): Promise<void> => {
+    const profileDoc = doc(db, 'profiles', profileId);
+    await updateDoc(profileDoc, updates);
+};
+
+export const deleteProfile = async (profileId: string): Promise<void> => {
+    await deleteDoc(doc(db, 'profiles', profileId));
 };
 
 // --- Jobs ---
 
-export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void) => {
-    const q = query(collection(db, 'jobs'), where('userId', '==', userId));
-    return onSnapshot(q, (snapshot) => {
-        const jobs = snapshot.docs.map(doc => {
-            const data = doc.data() || {};
-            const contacts = data.contacts || {};
-            
-            const cleanJob: Job = {
-                id: doc.id,
-                title: data.title || '',
-                company: data.company || '',
-                companyRating: data.companyRating || 0,
-                companyReviewSummary: data.companyReviewSummary || '',
-                salary: data.salary || '',
-                location: data.location || '',
-                description: data.description || '',
-                responsibilities: Array.isArray(data.responsibilities) ? [...data.responsibilities] : [],
-                requirements: Array.isArray(data.requirements) ? [...data.requirements] : [],
-                matchAnalysis: data.matchAnalysis || '',
-                url: data.url || '',
-                sourcePlatform: data.sourcePlatform || 'Неизвестно',
-                contacts: {
-                    email: contacts.email,
-                    phone: contacts.phone,
-                    telegram: contacts.telegram,
-                },
-                kanbanStatus: data.kanbanStatus || 'new',
-                notes: data.notes || undefined,
-                history: Array.isArray(data.history) ? data.history : [],
-                profileId: data.profileId || '',
-                userId: data.userId || '',
-            };
-             if (!cleanJob.contacts?.email && !cleanJob.contacts?.phone && !cleanJob.contacts?.telegram) {
-                delete cleanJob.contacts;
-            }
-            return cleanJob;
+export const getJobs = (userId: string, profileId: string, onUpdate: (jobs: Job[]) => void): Unsubscribe => {
+    if (!userId || !profileId) {
+        onUpdate([]);
+        return () => {}; // Return an empty unsubscribe function
+    }
+    const q = query(jobsCollection, where('userId', '==', userId), where('profileId', '==', profileId));
+    return onSnapshot(q, (querySnapshot) => {
+        const jobs: Job[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            // Firestore timestamps need to be converted
+            const history = (data.history || []).map((item: any) => ({
+                ...item,
+                timestamp: item.timestamp instanceof Timestamp ? item.timestamp.toDate().toISOString() : item.timestamp,
+            }));
+            jobs.push({ id: doc.id, ...data, history } as Job);
         });
-        callback(jobs);
+        onUpdate(jobs);
     });
 };
 
-export const addJobsBatch = async (jobs: Job[]) => {
-    const batch = writeBatch(db);
-    jobs.forEach(jobData => {
-        const jobWithOurId = {...jobData, id: jobData.id || uuidv4()};
-        const docRef = doc(db, 'jobs', jobWithOurId.id);
-        batch.set(docRef, jobWithOurId);
+export const addJob = async (userId: string, profileId: string, jobData: Omit<Job, 'id' | 'userId' | 'profileId'>): Promise<string> => {
+    const docRef = await addDoc(jobsCollection, {
+        ...jobData,
+        userId,
+        profileId,
+        createdAt: serverTimestamp()
     });
-    await batch.commit();
+    return docRef.id;
 };
 
-export const updateJob = (jobId: string, updates: Partial<Job>) => {
-    return updateDoc(doc(db, 'jobs', jobId), updates);
+export const addJobsBatch = async (userId: string, profileId: string, jobsData: Omit<Job, 'id' | 'userId' | 'profileId'>[]): Promise<void> => {
+    // Firestore batch writes are more efficient for multiple additions.
+    // However, for simplicity here, we'll just loop. A real implementation should use `writeBatch`.
+    for (const jobData of jobsData) {
+        await addJob(userId, profileId, jobData);
+    }
 };
 
-export const deleteJob = (jobId: string) => {
-    return deleteDoc(doc(db, 'jobs', jobId));
+export const updateJob = async (jobId: string, updates: Partial<Job>): Promise<void> => {
+    const jobDoc = doc(db, 'jobs', jobId);
+    await updateDoc(jobDoc, updates);
+};
+
+export const addJobInteraction = async (jobId: string, interaction: Interaction): Promise<void> => {
+    const jobRef = doc(db, 'jobs', jobId);
+    const jobSnap = await getDoc(jobRef);
+    if(jobSnap.exists()){
+        const job = jobSnap.data() as Job;
+        const updatedHistory = [...(job.history || []), interaction];
+        await updateJob(jobId, { history: updatedHistory });
+    }
+}
+
+
+export const deleteJob = async (jobId: string): Promise<void> => {
+    await deleteDoc(doc(db, 'jobs', jobId));
 };
