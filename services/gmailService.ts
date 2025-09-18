@@ -1,7 +1,9 @@
-// FIX: Add reference for GAPI to resolve gapi.client type errors.
+// FIX: Moved triple-slash directives to the top of the file for proper type resolution.
 /// <reference types="gapi" />
-// FIX: Add gapi.client types reference to resolve issues with gapi.client
 /// <reference types="gapi.client" />
+
+// FIX: Add reference for GAPI to resolve gapi.client type errors.
+// FIX: Add gapi.client types reference to resolve issues with gapi.client
 
 import type { GmailThread, GmailMessage } from "../types";
 

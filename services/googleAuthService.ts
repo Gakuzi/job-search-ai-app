@@ -1,8 +1,10 @@
-// FIX: Add references for GAPI and Google Accounts to resolve type errors.
+// FIX: Moved triple-slash directives to the top of the file for proper type resolution.
 /// <reference types="gapi" />
-// FIX: Add gapi.client types reference to resolve issues with gapi.client
 /// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
+
+// FIX: Add references for GAPI and Google Accounts to resolve type errors.
+// FIX: Add gapi.client types reference to resolve issues with gapi.client
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;

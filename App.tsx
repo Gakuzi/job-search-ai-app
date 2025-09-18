@@ -1,6 +1,4 @@
-// FIX: Add references for GAPI and Google Accounts to resolve type errors.
 /// <reference types="gapi" />
-// FIX: Add gapi.client types reference to resolve issues with gapi.client
 /// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
 
@@ -47,7 +45,7 @@ import {
     updateJob,
 } from './services/firestoreService';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { initTokenClient, initGapiClient, gapiLoad, getToken, revokeToken } from './services/googleAuthService';
+import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
 import { sendEmail, listThreads, getThread } from './services/gmailService';
 
 
@@ -81,10 +79,11 @@ function App() {
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
+    const [googleToken, setGoogleToken] = useLocalStorage<google.accounts.oauth2.TokenResponse | null>('google-token', null);
     const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null);
     const [isGapiReady, setIsGapiReady] = useState(false);
     
-    const isGoogleConnected = !!gapi.client?.getToken();
+    const isGoogleConnected = !!googleToken;
 
     const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
     const isGoogleConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_');
@@ -100,11 +99,25 @@ function App() {
     }, []);
 
     const handleGoogleAuthResponse = useCallback(async (tokenResponse: google.accounts.oauth2.TokenResponse) => {
+        if (tokenResponse.error) {
+            console.error('Google Auth Error:', tokenResponse);
+            setMessage(`Ошибка аутентификации Google: ${tokenResponse.error_description || tokenResponse.error}`);
+            setStatus(AppStatus.Error);
+            setGoogleToken(null);
+            setGoogleUser(null);
+            return;
+        }
+
         if (tokenResponse.access_token) {
+            gapi.client.setToken({ access_token: tokenResponse.access_token });
+            setGoogleToken(tokenResponse);
             try {
                 const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                     headers: { 'Authorization': `Bearer ${tokenResponse.access_token}` }
                 });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch user info, status: ${response.status}`);
+                }
                 const userInfo = await response.json();
                 setGoogleUser({
                     name: userInfo.name,
@@ -115,35 +128,47 @@ function App() {
                 console.error("Failed to fetch Google user info:", error);
                 setStatus(AppStatus.Error);
                 setMessage("Не удалось получить информацию о пользователе Google.");
+                setGoogleToken(null);
+                setGoogleUser(null);
+                gapi.client.setToken(null);
             }
         }
-    }, [setGoogleUser]);
+    }, [setGoogleUser, setGoogleToken]);
 
     useEffect(() => {
-        // This effect handles the initialization of Google API clients,
-        // ensuring the external scripts are loaded before use to prevent a race condition.
-        if (!isGoogleConfigured) {
-            return;
-        }
+        if (!isGoogleConfigured) return;
     
-        const scriptLoadCheckInterval = setInterval(async () => {
-            // Wait until both the GAPI (for Gmail API) and GSI (for Sign-In) scripts have loaded.
+        const scriptLoadCheckInterval = setInterval(() => {
             if (window.gapi && window.google) {
                 clearInterval(scriptLoadCheckInterval);
                 try {
-                    await gapiLoad('client:oauth2');
-                    await initGapiClient();
-                    setIsGapiReady(true);
-                    setTokenClient(initTokenClient(handleGoogleAuthResponse));
+                    // Initialize GSI first for a responsive UI. It's fast and local.
+                    const client = initTokenClient(handleGoogleAuthResponse);
+                    setTokenClient(client);
+                    
+                    // Initialize GAPI in the background. This involves network requests.
+                    gapiLoad('client').then(() => {
+                        initGapiClient().then(() => {
+                           setIsGapiReady(true);
+                        }).catch(gapiInitError => {
+                            console.error("Failed to initialize GAPI client:", gapiInitError);
+                            setStatus(AppStatus.Error);
+                            setMessage("Не удалось загрузить Gmail API. Функции почты могут не работать.");
+                        });
+                    }).catch(gapiLoadError => {
+                        console.error("Failed to load GAPI client library:", gapiLoadError);
+                        setStatus(AppStatus.Error);
+                        setMessage("Не удалось загрузить библиотеку Google. Функции почты могут не работать.");
+                    });
+
                 } catch (error) {
                     console.error("Failed to initialize Google Auth clients:", error);
                     setStatus(AppStatus.Error);
                     setMessage("Не удалось инициализировать сервисы Google. Проверьте консоль.");
                 }
             }
-        }, 150); // Check every 150ms for the scripts.
+        }, 150);
     
-        // Set a timeout to prevent the interval from running indefinitely if scripts fail to load.
         const timeout = setTimeout(() => {
             clearInterval(scriptLoadCheckInterval);
             if (!window.gapi || !window.google) {
@@ -151,14 +176,21 @@ function App() {
                 setStatus(AppStatus.Error);
                 setMessage("Не удалось загрузить скрипты Google. Проверьте интернет-соединение и отключите блокировщики рекламы, затем обновите страницу.");
             }
-        }, 5000); // 5-second timeout.
+        }, 5000);
     
-        // Cleanup function to clear the interval and timeout when the component unmounts.
         return () => {
             clearInterval(scriptLoadCheckInterval);
             clearTimeout(timeout);
         };
     }, [isGoogleConfigured, handleGoogleAuthResponse]);
+
+    // This effect re-applies the stored token to the GAPI client when the app loads
+    // or when the GAPI client becomes ready.
+    useEffect(() => {
+        if (isGapiReady && googleToken) {
+            gapi.client.setToken({ access_token: googleToken.access_token });
+        }
+    }, [isGapiReady, googleToken]);
 
 
     useEffect(() => {
@@ -194,18 +226,22 @@ function App() {
     
     const handleGoogleSignIn = () => {
         if (tokenClient) {
-            getToken(tokenClient);
+            tokenClient.requestAccessToken({ prompt: '' });
+        } else {
+            console.error("Google Token Client is not initialized yet.");
+            setStatus(AppStatus.Error);
+            setMessage("Клиент Google еще не готов. Пожалуйста, подождите несколько секунд и попробуйте снова.");
         }
     };
     
     const handleGoogleSignOut = () => {
-        if (gapi.client.getToken()) {
-            revokeToken();
+        if (googleToken) {
+            revokeToken(googleToken.access_token);
             setGoogleUser(null);
+            setGoogleToken(null);
         }
     };
 
-    // FIX: Add handleLogout function for signing out the user.
     const handleLogout = () => {
         signOut(auth).catch(error => console.error("Logout failed:", error));
     };
@@ -430,9 +466,7 @@ function App() {
             // In a real app, you would use listThreads and getThread
             // For this example, we use mock data to demonstrate the flow
             const mockReplies: GmailThread[] = [
-                // FIX: Added missing 'threadId' property to GmailMessage mock object.
                 { id: 'thread1', snippet: 'Re: Вакансия Project Manager - Приглашение на собеседование', messages: [{ id: 'msg1', threadId: 'thread1', payload: { headers: [{name: 'Subject', value: 'Re: Вакансия Project Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Здравствуйте! Спасибо за отклик. Хотим пригласить вас на онлайн-собеседование 15 мая в 12:00. Подходит ли вам это время? С уважением, HR-отдел Tech Solutions.'))) } }] } }] },
-                // FIX: Added missing 'threadId' property to GmailMessage mock object.
                 { id: 'thread2', snippet: 'Отклик на вакансию Product Manager', messages: [{ id: 'msg2', threadId: 'thread2', payload: { headers: [{name: 'Subject', value: 'Re: Отклик на вакансию Product Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Добрый день! К сожалению, на данный момент мы не готовы продолжить общение по вашей кандидатуре. Спасибо за уделенное время. FinTech Innovations.'))) } }] } }] }
             ];
             
@@ -452,7 +486,6 @@ function App() {
         if (!activeProfile) return;
         
         try {
-            // FIX: Correctly update state for 'useState' hook with an immutable pattern. 'use-immer' was not used for this state variable.
             setModal(prevModal => {
                 if (prevModal.type === 'replyScanner') {
                     return { ...prevModal, analysisJobId: 'loading' };
@@ -460,7 +493,6 @@ function App() {
                 return prevModal;
             });
 
-            // 1. Match email to a job
             const matchedJobId = await matchEmailToJob(emailText, jobs);
             const matchedJob = jobs.find(j => j.id === matchedJobId);
             
@@ -468,7 +500,6 @@ function App() {
                 throw new Error("Не удалось найти подходящую вакансию для этого письма.");
             }
 
-            // FIX: Correctly update state for 'useState' hook with an immutable pattern. 'use-immer' was not used for this state variable.
             setModal(prevModal => {
                 if (prevModal.type === 'replyScanner') {
                     return { ...prevModal, analysisJobId: matchedJob.id };
@@ -476,17 +507,15 @@ function App() {
                 return prevModal;
             });
             
-            // 2. Analyze response and update status
             await handleAnalyzeHrResponse(matchedJob, emailText);
 
         } catch (error) {
             setStatus(AppStatus.Error);
             setMessage(error instanceof Error ? error.message : 'Ошибка при анализе ответа.');
         } finally {
-            // Close modal or update its state after analysis
              setTimeout(() => {
                 setModal({ type: 'none' });
-            }, 3000); // Give user time to see the result
+            }, 3000); 
         }
     };
 
