@@ -1,0 +1,150 @@
+import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import type { Job } from '../types';
+import { useDebounce } from '../hooks/useDebounce';
+import { XCircleIcon } from './icons/XCircleIcon';
+import { ClipboardIcon } from './icons/ClipboardIcon';
+import { SendIcon } from './icons/SendIcon';
+import { PencilSquareIcon } from './icons/PencilSquareIcon';
+
+interface JobDetailModalProps {
+    job: Job;
+    onClose: () => void;
+    onUpdateJob: (jobId: string, updates: Partial<Job>) => void;
+    onAdaptResume: (job: Job) => void;
+    onGenerateEmail: (job: Job) => void;
+    onPrepareForInterview: (job: Job) => void;
+}
+
+const JobDetailModal: React.FC<JobDetailModalProps> = ({ 
+    job, 
+    onClose, 
+    onUpdateJob,
+    onAdaptResume,
+    onGenerateEmail,
+    onPrepareForInterview
+}) => {
+    const [notes, setNotes] = useState(job.notes || '');
+    const debouncedNotes = useDebounce(notes, 500);
+
+    useEffect(() => {
+        if (debouncedNotes !== (job.notes || '')) {
+            onUpdateJob(job.id, { notes: debouncedNotes });
+        }
+    }, [debouncedNotes, job.id, job.notes, onUpdateJob]);
+    
+    return (
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 transition-opacity duration-300" 
+            onClick={onClose}
+        >
+            <div 
+                className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transition-transform transform scale-95 animate-scale-in" 
+                role="dialog" 
+                aria-modal="true" 
+                aria-labelledby="modal-title"
+                onClick={e => e.stopPropagation()}
+            >
+                <header className="flex items-start justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                        <h2 id="modal-title" className="text-xl font-bold text-primary-600 dark:text-primary-400">{job.title}</h2>
+                        <p className="text-md font-semibold text-slate-700 dark:text-slate-300">{job.company}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{job.location}</p>
+                    </div>
+                    <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" aria-label="Закрыть модальное окно">
+                        <XCircleIcon className="w-6 h-6" />
+                    </button>
+                </header>
+
+                <main className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 p-6 overflow-y-auto">
+                    {/* Left Column: Job Details */}
+                    <div className="md:col-span-2 prose prose-slate dark:prose-invert max-w-none">
+                        <div className="p-4 bg-primary-50 dark:bg-slate-800 rounded-lg">
+                            <h4 className="font-semibold text-primary-800 dark:text-primary-200">Анализ от ИИ</h4>
+                            <p className="text-sm text-primary-700 dark:text-primary-300 mt-1">{job.matchAnalysis}</p>
+                        </div>
+                        <h3>Описание</h3>
+                        <p>{job.description}</p>
+                        <h3>Обязанности</h3>
+                        <ul>
+                            {job.responsibilities.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                        <h3>Требования</h3>
+                        <ul>
+                            {job.requirements.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                        <p><strong>Рейтинг компании:</strong> ⭐ {job.companyRating}/5 - <em>{job.companyReviewSummary}</em></p>
+                        <a href={job.url} target="_blank" rel="noopener noreferrer">Источник (симуляция)</a>
+                    </div>
+
+                    {/* Right Column: Actions & Notes */}
+                    <div className="space-y-4">
+                        <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                            <h3 className="text-lg font-semibold mb-2">Инструменты ИИ</h3>
+                            <div className="space-y-2">
+                                <button onClick={() => onAdaptResume(job)} className="w-full btn-tool">
+                                    <ClipboardIcon className="w-4 h-4" /> Адаптировать резюме
+                                </button>
+                                <button onClick={() => onGenerateEmail(job)} className="w-full btn-tool">
+                                    <SendIcon className="w-4 h-4" /> Сопроводительное
+                                </button>
+                                <button onClick={() => onPrepareForInterview(job)} className="w-full btn-tool">
+                                    <PencilSquareIcon className="w-4 h-4" /> К интервью
+                                </button>
+                            </div>
+                        </div>
+                         <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                            <h3 className="text-lg font-semibold mb-2">Заметки</h3>
+                             <textarea 
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                rows={8}
+                                placeholder="Добавьте ваши заметки..."
+                                className="w-full p-2 text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                    </div>
+                </main>
+                 <footer className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-md hover:bg-slate-300 dark:hover:bg-slate-500">
+                        Закрыть
+                    </button>
+                </footer>
+            </div>
+            <style>{`
+                @keyframes scale-in {
+                    from { transform: scale(0.95); opacity: 0; }
+                    to { transform: scale(1); opacity: 1; }
+                }
+                .animate-scale-in {
+                    animation: scale-in 0.2s ease-out forwards;
+                }
+                .btn-tool {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 0.5rem 0.75rem;
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                    background-color: #fff;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 0.375rem;
+                    transition: background-color 0.2s;
+                }
+                .dark .btn-tool {
+                    background-color: #475569;
+                    border-color: #64748b;
+                    color: #e2e8f0;
+                }
+                .btn-tool:hover {
+                    background-color: #f1f5f9;
+                }
+                .dark .btn-tool:hover {
+                    background-color: #64748b;
+                }
+            `}</style>
+        </div>
+    );
+};
+
+export default JobDetailModal;
