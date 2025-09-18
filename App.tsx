@@ -1,4 +1,5 @@
 
+
 // FIX: Remove reference types that cause errors when @types are not installed.
 // The global declarations below are sufficient for type checking.
 
@@ -81,7 +82,7 @@ function App() {
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
     const [message, setMessage] = useState('Настройте параметры поиска и нажмите "Найти вакансии".');
     
-    const [modal, setModal] = useState<ModalState>({ type: 'none' });
+    const [modal, setModal] = useImmer<ModalState>({ type: 'none' });
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     
     const initialGeminiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -230,7 +231,7 @@ function App() {
             unsubscribeProfiles();
             unsubscribeJobs();
         };
-    }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId]);
+    }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId, setModal]);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
     
@@ -264,18 +265,17 @@ function App() {
     const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
         if (!activeProfile) return;
         
-        setProfiles(currentProfiles => {
-            const profileIndex = currentProfiles.findIndex(p => p.id === activeProfile.id);
-            if (profileIndex === -1) return currentProfiles;
-            
-            const updatedProfile = { ...currentProfiles[profileIndex] };
-            updater(updatedProfile);
-
-            updateProfile(updatedProfile).catch(console.error);
-            
-            const newProfiles = [...currentProfiles];
-            newProfiles[profileIndex] = updatedProfile;
-            return newProfiles;
+        const updatedProfile = { ...activeProfile };
+        updater(updatedProfile);
+        updateProfile(updatedProfile).catch(console.error);
+        
+        // This is a simplified update for the UI to avoid waiting for Firestore.
+        // For a more robust solution, you'd re-fetch or use the Firestore subscription.
+        setProfiles(draft => {
+            const index = draft.findIndex(p => p.id === activeProfile.id);
+            if (index !== -1) {
+                draft[index] = updatedProfile;
+            }
         });
     }, [activeProfile, setProfiles]);
 
@@ -314,6 +314,7 @@ function App() {
         if (!activeProfile) return;
 
         setStatus(AppStatus.Loading);
+        setMessage('Анализирую ваш профиль и резюме...');
         
         setFoundJobs([]);
         setView('search');
@@ -344,6 +345,8 @@ function App() {
                     }));
                 allResults = [...allResults, ...newJobsFromPlatform];
             }
+
+            setMessage('ИИ завершает анализ и сопоставление с вашим профилем...');
 
             setFoundJobs(allResults);
             setStatus(AppStatus.Success);
@@ -400,10 +403,39 @@ function App() {
             setModal({ type: 'aiContent', title, content: `Ошибка: ${errorMessage}`, isLoading: false });
         }
     };
+    
+    const runStreamingAiAction = async (title: string, action: () => AsyncGenerator<string>) => {
+        setModal({ type: 'aiContent', title, content: '', isLoading: true });
+        try {
+            const stream = action();
+            let firstChunk = true;
+            for await (const chunk of stream) {
+                if (firstChunk) {
+                    setModal(draft => {
+                        if (draft.type === 'aiContent') {
+                            draft.isLoading = false;
+                            draft.content = chunk;
+                        }
+                    });
+                    firstChunk = false;
+                } else {
+                    setModal(draft => {
+                        if (draft.type === 'aiContent') {
+                            draft.content += chunk;
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
+             setModal({ type: 'aiContent', title, content: `Ошибка: ${errorMessage}`, isLoading: false });
+        }
+    };
+
 
     const handleAdaptResume = (job: Job) => {
         if (!activeProfile) return;
-        runAiAction(
+        runStreamingAiAction(
             `Адаптированное резюме для "${job.title}"`,
             () => adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job)
         );
@@ -422,7 +454,7 @@ function App() {
 
     const handlePrepareForInterview = (job: Job) => {
         if (!activeProfile) return;
-        runAiAction(
+        runStreamingAiAction(
             `Подготовка к собеседованию на "${job.title}"`,
             () => getInterviewQuestions(job, activeProfile.resume)
         );

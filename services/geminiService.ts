@@ -1,16 +1,37 @@
 
+
+
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
 import { getActiveApiKey, rotateApiKey } from './apiKeyService';
 
 // --- API Key Management and Error Handling ---
 
-/**
- * A wrapper for all Gemini API calls that handles client instantiation,
- * execution, and automatic API key rotation on specific errors.
- * @param operation A function that receives an AI client and performs an API call.
- * @returns The result of the operation.
- */
+const handleApiError = (error: unknown) => {
+    const errorString = (error as any)?.message?.toLowerCase() || (error as Error).toString().toLowerCase();
+        
+    if (errorString.includes('429') || errorString.includes('quota')) {
+        console.warn('API key quota exceeded. Rotating key.');
+        rotateApiKey();
+        throw new Error("Лимит запросов для текущего API ключа исчерпан. Мы автоматически переключились на следующий ключ. Пожалуйста, повторите ваше действие.");
+    }
+    
+    if (errorString.includes('api key not valid')) {
+        console.error('Invalid API key detected. Rotating key.');
+        rotateApiKey();
+        throw new Error("Текущий API ключ недействителен. Мы автоматически переключились на следующий. Проверьте ключи в настройках.");
+    }
+    
+    if (errorString.includes('failed to fetch')) {
+        console.warn('A "Failed to fetch" error occurred. This could be a transient network issue or a problem with the current API key. Rotating key as a precaution.');
+        rotateApiKey();
+        throw new Error("Произошла сетевая ошибка при обращении к Gemini API. Это может быть временно. Мы переключились на следующий API ключ; попробуйте еще раз.");
+    }
+    
+    console.error('Gemini API Error:', error);
+    throw error; // Re-throw other unhandled errors
+};
+
 const runAiOperation = async <T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> => {
     const apiKey = getActiveApiKey();
     if (!apiKey) {
@@ -21,26 +42,29 @@ const runAiOperation = async <T>(operation: (ai: GoogleGenAI) => Promise<T>): Pr
         const ai = new GoogleGenAI({ apiKey });
         return await operation(ai);
     } catch (error) {
-        const errorString = (error as any)?.message?.toLowerCase() || (error as Error).toString().toLowerCase();
-        
-        // Check for quota/rate limit errors
-        if (errorString.includes('429') || errorString.includes('quota')) {
-            console.warn('API key quota exceeded. Rotating key.');
-            rotateApiKey();
-            throw new Error("Лимит запросов для текущего API ключа исчерпан. Мы автоматически переключились на следующий ключ. Пожалуйста, повторите ваше действие.");
-        }
-        
-        // Check for invalid API key errors
-        if (errorString.includes('api key not valid')) {
-            console.error('Invalid API key detected. Rotating key.');
-            rotateApiKey();
-            throw new Error("Текущий API ключ недействителен. Мы автоматически переключились на следующий. Проверьте ключи в настройках.");
-        }
-        
-        console.error('Gemini API Error:', error);
-        throw error; // Re-throw other unhandled errors
+        handleApiError(error);
+        // This line will not be reached because handleApiError throws, but it's needed for type safety.
+        throw error;
     }
 };
+
+async function* runStreamingAiOperation(operation: (ai: GoogleGenAI) => Promise<AsyncGenerator<string>>): AsyncGenerator<string> {
+    const apiKey = getActiveApiKey();
+    if (!apiKey) {
+        throw new Error("Ключ Gemini API не настроен. Добавьте его в Настройки -> API Ключи.");
+    }
+
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const stream = await operation(ai);
+        for await (const chunk of stream) {
+            yield chunk;
+        }
+    } catch (error) {
+        handleApiError(error);
+    }
+}
+
 
 /**
  * Helper to handle potential JSON parsing errors from the AI response.
@@ -123,19 +147,28 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
     return parsedJobs.map(job => ({ ...job, sourcePlatform: platform.name }));
 };
 
-export const adaptResume = async (promptTemplate: string, resume: string, job: Job): Promise<string> => {
-    return runAiOperation(async (ai) => {
-        const prompt = promptTemplate
-          .replace('{jobTitle}', job.title)
-          .replace('{jobCompany}', job.company);
-        
-        const response = await ai.models.generateContent({
+export async function* adaptResume(promptTemplate: string, resume: string, job: Job): AsyncGenerator<string> {
+    const prompt = promptTemplate
+      .replace('{jobTitle}', job.title)
+      .replace('{jobCompany}', job.company);
+    
+    const fullPrompt = `${prompt}\n\n## Базовое резюме:\n${resume}\n\n## Описание вакансии:\n${job.description}\n\nОбязанности:\n${job.responsibilities.join('\n- ')}`;
+    
+    // FIX: The function passed to runStreamingAiOperation must be an async function that returns a promise resolving to an async generator.
+    // The original `async function*` was incorrect as it directly returned an async generator.
+    yield* runStreamingAiOperation(async (ai) => {
+        const response = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
-            contents: `${prompt}\n\n## Базовое резюме:\n${resume}\n\n## Описание вакансии:\n${job.description}\n\nОбязанности:\n${job.responsibilities.join('\n- ')}`
+            contents: fullPrompt
         });
-        return response.text;
+        async function* chunks() {
+            for await (const chunk of response) {
+                yield chunk.text;
+            }
+        }
+        return chunks();
     });
-};
+}
 
 export const generateCoverLetter = async (promptTemplate: string, job: Job, candidateName: string): Promise<{ subject: string; body: string }> => {
     return runAiOperation(async (ai) => {
@@ -167,9 +200,8 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
     });
 };
 
-export const getInterviewQuestions = async (job: Job, resume: string): Promise<string> => {
-    return runAiOperation(async (ai) => {
-        const prompt = `
+export async function* getInterviewQuestions(job: Job, resume: string): AsyncGenerator<string> {
+    const prompt = `
 Действуй как опытный HR-менеджер и карьерный коуч.
 Подготовь кандидата к собеседованию на должность "${job.title}" в компанию "${job.company}".
 На основе резюме кандидата и описания вакансии, сгенерируй список из 5-7 наиболее вероятных и важных вопросов.
@@ -184,10 +216,21 @@ ${resume}
 **Описание:** ${job.description}
 **Обязанности:** ${job.responsibilities.join(', ')}
     `;
-        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
-        return response.text;
+    // FIX: The function passed to runStreamingAiOperation must be an async function that returns a promise resolving to an async generator.
+    // The original `async function*` was incorrect as it directly returned an async generator.
+    yield* runStreamingAiOperation(async (ai) => {
+        const response = await ai.models.generateContentStream({
+            model: "gemini-2.5-flash",
+            contents: prompt
+        });
+        async function* chunks() {
+            for await (const chunk of response) {
+                yield chunk.text;
+            }
+        }
+        return chunks();
     });
-};
+}
 
 export const analyzeResumeAndAskQuestions = async (resumeText: string): Promise<string> => {
     return runAiOperation(async (ai) => {
