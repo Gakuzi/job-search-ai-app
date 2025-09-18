@@ -2,13 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus } from '../types';
 
 const getAiClient = () => {
-    // Vite использует `import.meta.env` для доступа к переменным окружения
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-        console.error("Gemini API key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.");
-        throw new Error("Ключ Gemini API не настроен. Укажите его в переменных окружения на Vercel.");
-    }
-    return new GoogleGenAI({ apiKey });
+    // FIX: Initializing the Gemini client using the API key from environment variables,
+    // as per project guidelines. The key is assumed to be pre-configured and available.
+    return new GoogleGenAI({ apiKey: process.env.API_KEY! });
 };
 
 
@@ -45,7 +41,7 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
         if (!htmlContent) {
             throw new Error('Не удалось получить HTML-контент со страницы поиска.');
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching job page HTML:", error);
         throw new Error(`Не удалось загрузить страницу с вакансиями. Возможно, сайт-источник или прокси недоступен. ${error.message}`);
     }
@@ -240,7 +236,8 @@ export const analyzeHrResponse = async (promptTemplate: string, emailText: strin
     const result = response.text.trim().toLowerCase();
     
     // Validate the response from AI
-    if (['new', 'tracking', 'interview', 'offer', 'archive'].includes(result)) {
+    const validStatuses: KanbanStatus[] = ['new', 'tracking', 'interview', 'offer', 'archive'];
+    if (validStatuses.includes(result as KanbanStatus)) {
         return result as KanbanStatus;
     }
     
