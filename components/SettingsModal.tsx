@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Profile, GoogleUser, Platform } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
@@ -13,8 +11,9 @@ import { PlusCircleIcon } from './icons/PlusCircleIcon';
 import { KeyIcon } from './icons/KeyIcon';
 import GmailConnect from './GmailConnect';
 import { testApiKey } from '../services/geminiService';
+import { GlobeAltIcon } from './icons/GlobeAltIcon';
 
-type SettingsTab = 'profiles' | 'search' | 'resume' | 'integrations' | 'platforms' | 'apiKeys';
+type SettingsTab = 'profiles' | 'apiKeys' | 'platforms' | 'search' | 'resume' | 'integrations';
 type KeyTestStatus = 'testing' | 'valid' | 'invalid' | 'idle';
 
 
@@ -31,12 +30,6 @@ interface SettingsModalProps {
     isGoogleConnected: boolean;
     onGoogleSignIn: () => void;
     onGoogleSignOut: () => void;
-    apiKeys: string[];
-    setApiKeys: React.Dispatch<React.SetStateAction<string[]>>;
-    activeApiKeyIndex: number;
-    setActiveApiKeyIndex: React.Dispatch<React.SetStateAction<number>>;
-    avitoApiKey: string;
-    setAvitoApiKey: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -52,24 +45,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     isGoogleConnected,
     onGoogleSignIn,
     onGoogleSignOut,
-    apiKeys,
-    setApiKeys,
-    activeApiKeyIndex,
-    setActiveApiKeyIndex,
-    avitoApiKey,
-    setAvitoApiKey,
 }) => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('profiles');
     const [profileName, setProfileName] = useState(activeProfile?.name || '');
     const debouncedProfileName = useDebounce(profileName, 500);
     const [keyTestStatus, setKeyTestStatus] = useState<Record<number, KeyTestStatus>>({});
 
+    // Sync local state when active profile changes
     useEffect(() => {
         if (activeProfile) {
             setProfileName(activeProfile.name);
         }
     }, [activeProfile]);
-
+    
+    // Persist profile name change after debounce
     useEffect(() => {
         if (debouncedProfileName && activeProfile && debouncedProfileName !== activeProfile.name) {
             onUpdateProfile(draft => {
@@ -116,24 +105,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateProfile(draft => { draft.resume = value; });
     }, [onUpdateProfile]);
 
+    // --- API Key Handlers ---
     const handleKeyChange = (index: number, value: string) => {
-        setApiKeys(currentKeys => {
-            const newKeys = [...currentKeys];
-            newKeys[index] = value;
-            return newKeys;
+        onUpdateProfile(draft => {
+            if (draft.geminiApiKeys) {
+                draft.geminiApiKeys[index] = value;
+            }
         });
         setKeyTestStatus(s => ({...s, [index]: 'idle'}));
     };
 
     const handleAddKey = () => {
-        setApiKeys(currentKeys => [...currentKeys, '']);
+        onUpdateProfile(draft => {
+            draft.geminiApiKeys = [...(draft.geminiApiKeys || []), ''];
+        });
     };
 
     const handleRemoveKey = (indexToRemove: number) => {
-        setApiKeys(currentKeys => currentKeys.filter((_, i) => i !== indexToRemove));
-        if (activeApiKeyIndex >= apiKeys.length - 1 || activeApiKeyIndex === indexToRemove) {
-            setActiveApiKeyIndex(0);
-        }
+        onUpdateProfile(draft => {
+            draft.geminiApiKeys = (draft.geminiApiKeys || []).filter((_, i) => i !== indexToRemove);
+            if (draft.activeGeminiApiKeyIndex && (draft.activeGeminiApiKeyIndex >= (draft.geminiApiKeys?.length || 0) || draft.activeGeminiApiKeyIndex === indexToRemove)) {
+                draft.activeGeminiApiKeyIndex = 0;
+            }
+        });
         setKeyTestStatus(s => {
             const newStatus = {...s};
             delete newStatus[indexToRemove];
@@ -141,11 +135,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         })
     };
     
-    const handleTestKey = async (index: number, key: string) => {
+    const handleTestKey = async (index: number) => {
+        const key = activeProfile?.geminiApiKeys?.[index];
         if (!key) return;
         setKeyTestStatus(s => ({ ...s, [index]: 'testing' }));
         const isValid = await testApiKey(key);
         setKeyTestStatus(s => ({ ...s, [index]: isValid ? 'valid' : 'invalid' }));
+    };
+    
+    const handleAvitoCredentialsChange = (field: 'avitoClientId' | 'avitoClientSecret', value: string) => {
+        onUpdateProfile(draft => {
+            draft[field] = value;
+        });
     };
     
     const getStatusIndicator = (status: KeyTestStatus) => {
@@ -190,7 +191,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
                         <TabButton tabId="profiles" label="Профили" icon={<UserGroupIcon className="w-4 h-4" />}/>
                         <TabButton tabId="apiKeys" label="API Ключи" icon={<KeyIcon className="w-4 h-4" />}/>
-                        <TabButton tabId="platforms" label="Платформы" icon={<svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0112 13.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253M18.716 14.253A9.004 9.004 0 0112 21c-2.485 0-4.5-4.03-4.5-9s2.015-9 4.5-9 4.5 4.03 4.5 9" /></svg>}/>
+                        <TabButton tabId="platforms" label="Платформы" icon={<GlobeAltIcon className="w-4 h-4" />}/>
                         <TabButton tabId="search" label="Параметры" icon={<BriefcaseIcon className="w-4 h-4" />}/>
                         <TabButton tabId="resume" label="Резюме" icon={<PencilSquareIcon className="w-4 h-4" />}/>
                         <TabButton tabId="integrations" label="Интеграции" icon={<LinkIcon className="w-4 h-4" />}/>
@@ -201,7 +202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                              <div className="space-y-4">
                                 <div>
                                     <h3 className="text-lg font-semibold">Управление профилями</h3>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">Здесь вы можете переименовывать и удалять свои профили. Переключение активного профиля происходит в шапке приложения.</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Здесь вы можете переименовывать и удалять свои профили. Переключение активного профиля происходит в боковой панели.</p>
                                 </div>
                                 <div className="space-y-3">
                                     {profiles.map(p => (
@@ -229,7 +230,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                                 <button onClick={onAddProfile} className="btn-secondary w-full justify-center flex items-center gap-2">
                                     <PlusCircleIcon className="w-5 h-5"/>
-                                    Создать новый профиль через AI
+                                    Создать новый профиль
                                 </button>
                             </div>
                         )}
@@ -237,28 +238,47 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="space-y-6">
                                 <div className="space-y-4">
                                     <div>
-                                        <h3 className="text-lg font-semibold">API Ключ Avito</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">Вставьте ваш ключ для прямого доступа к API Avito. Это обеспечит самый быстрый и точный поиск по этой платформе.</p>
+                                        <h3 className="text-lg font-semibold">Интеграция с Avito</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Вставьте ваши ключи для прямого доступа к API Avito. Это обеспечит самый быстрый и точный поиск по этой платформе.</p>
                                     </div>
-                                    <div className="p-3 rounded-lg flex items-center gap-3 bg-slate-100 dark:bg-slate-700">
-                                         <input 
-                                            type="text"
-                                            value={avitoApiKey}
-                                            onChange={(e) => setAvitoApiKey(e.target.value)}
-                                            placeholder="Вставьте ваш Avito API ключ"
-                                            className="w-full input-style font-mono text-sm"
-                                        />
+                                    <div className="p-3 rounded-lg flex flex-col gap-3 bg-slate-100 dark:bg-slate-700">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avito Client ID</label>
+                                            <input 
+                                                type="text"
+                                                value={activeProfile.avitoClientId || ''}
+                                                onChange={(e) => handleAvitoCredentialsChange('avitoClientId', e.target.value)}
+                                                placeholder="Вставьте ваш Avito Client ID"
+                                                className="w-full input-style font-mono text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avito Client Secret</label>
+                                             <input 
+                                                type="password"
+                                                value={activeProfile.avitoClientSecret || ''}
+                                                onChange={(e) => handleAvitoCredentialsChange('avitoClientSecret', e.target.value)}
+                                                placeholder="Вставьте ваш Avito Client Secret"
+                                                className="w-full input-style font-mono text-sm"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-700">
                                     <div>
                                         <h3 className="text-lg font-semibold">Пул API ключей Gemini</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">Добавьте несколько API ключей. Если один из них исчерпает дневной лимит, система автоматически переключится на следующий. Активный ключ подсвечен синим.</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Добавьте несколько API ключей. Если один из них исчерпает дневной лимит, система автоматически переключится на следующий. Активный ключ отмечен радио-кнопкой.</p>
                                     </div>
                                     <div className="space-y-3">
-                                        {apiKeys.map((key, index) => (
-                                            <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${index === activeApiKeyIndex ? 'bg-blue-50 dark:bg-slate-800 border border-blue-500' : 'bg-slate-100 dark:bg-slate-700'}`}>
-                                                <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{index + 1}.</span>
+                                        {(activeProfile.geminiApiKeys || []).map((key, index) => (
+                                            <div key={index} className="p-3 rounded-lg flex items-center gap-3 bg-slate-100 dark:bg-slate-700">
+                                                <input 
+                                                    type="radio"
+                                                    name="activeApiKey"
+                                                    checked={index === activeProfile.activeGeminiApiKeyIndex}
+                                                    onChange={() => onUpdateProfile(draft => { draft.activeGeminiApiKeyIndex = index; })}
+                                                    className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                                />
                                                 <input 
                                                     type="text"
                                                     value={key}
@@ -267,7 +287,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     className="w-full input-style font-mono text-sm"
                                                 />
                                                 {getStatusIndicator(keyTestStatus[index] || 'idle')}
-                                                <button onClick={() => handleTestKey(index, key)} className="btn-secondary text-sm" disabled={keyTestStatus[index] === 'testing'}>
+                                                <button onClick={() => handleTestKey(index)} className="btn-secondary text-sm" disabled={keyTestStatus[index] === 'testing'}>
                                                     {keyTestStatus[index] === 'testing' ? '...' : 'Тест'}
                                                 </button>
                                                 <button onClick={() => handleRemoveKey(index)} className="btn-danger text-sm">

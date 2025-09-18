@@ -17,9 +17,6 @@
  * 7.  Установите зависимость: `npm install axios`
  * 8.  Замените содержимое файла `functions/src/index.ts` на код, представленный ниже.
  * 9.  Разверните функцию: из папки `functions` выполните команду `firebase deploy --only functions`
- * 10. После развертывания Firebase предоставит вам URL для вашей функции.
- * 11. Скопируйте этот URL и вставьте его в файл `services/avitoService.ts` вместо плейсхолдера.
- * 
  * ==========================================================================================
  */
 
@@ -28,7 +25,8 @@ import axios from "axios";
 
 // Определяем интерфейс для данных, приходящих от клиента
 interface RequestData {
-    apiKey: string;
+    clientId: string;
+    clientSecret: string;
     searchSettings: {
         query: string;
         location: string;
@@ -54,34 +52,61 @@ interface AvitoVacancy {
     };
 }
 
-// Создаем HTTPS-функцию, вызываемую из нашего приложения
-export const findAvitoJobs = functions.https.onCall(async (data: RequestData, context) => {
-    const { apiKey, searchSettings } = data;
+// 1. Функция для получения токена доступа от Avito
+const getAvitoToken = async (clientId: string, clientSecret: string): Promise<string> => {
+    const AVITO_TOKEN_URL = "https://api.avito.ru/token/";
+    
+    try {
+        const response = await axios.post(AVITO_TOKEN_URL, new URLSearchParams({
+            "grant_type": "client_credentials",
+            "client_id": clientId,
+            "client_secret": clientSecret,
+        }), {
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        });
+        return response.data.access_token;
+    } catch (error: any) {
+        console.error("Ошибка при получении токена Avito:", error.response?.data || error.message);
+        throw new functions.https.HttpsError(
+            "unauthenticated",
+            "Не удалось получить токен доступа от Avito. Проверьте Client ID и Client Secret.",
+            error.response?.data
+        );
+    }
+};
 
-    if (!apiKey) {
-        throw new functions.https.HttpsError("unauthenticated", "API ключ Avito не предоставлен.");
+
+// 2. Основная HTTPS-функция, вызываемая из нашего приложения
+export const findAvitoJobs = functions.https.onCall(async (data: RequestData) => {
+    const { clientId, clientSecret, searchSettings } = data;
+
+    if (!clientId || !clientSecret) {
+        throw new functions.https.HttpsError("unauthenticated", "Avito Client ID и Client Secret не предоставлены.");
     }
     
     if (!searchSettings || !searchSettings.query) {
         throw new functions.https.HttpsError("invalid-argument", "Необходимо указать параметры поиска.");
     }
 
+    // Получаем токен доступа
+    const accessToken = await getAvitoToken(clientId, clientSecret);
+    
     const AVITO_API_URL = "https://api.avito.ru/job-search/v1/vacancies";
 
     try {
         const response = await axios.get(AVITO_API_URL, {
             headers: {
-                "Authorization": `Bearer ${apiKey}`,
+                "Authorization": `Bearer ${accessToken}`,
                 "Content-Type": "application/json",
             },
             params: {
                 q: searchSettings.query,
-                // Примечание: API Avito может иметь другие параметры для локации и зарплаты.
-                // Этот код - пример, основанный на общей документации.
-                // Возможно, потребуется адаптация параметров под точные требования API.
-                location: searchSettings.location,
+                // Параметры могут отличаться, сверьтесь с документацией Avito
+                address: searchSettings.location,
                 salary_from: searchSettings.salary,
-                per_page: searchSettings.limit,
+                count: searchSettings.limit,
             },
         });
 

@@ -18,6 +18,8 @@ import { GlobeAltIcon } from './icons/GlobeAltIcon';
 interface SetupWizardModalProps {
     onFinish: (result: { resume: string, settings: SearchSettings, profileName: string }) => void;
     onClose: () => void;
+    getApiKey: () => string | null;
+    rotateApiKey: () => void;
 }
 
 const steps = [
@@ -27,7 +29,7 @@ const steps = [
     { id: 4, name: 'Завершение', icon: ShieldCheckIcon },
 ];
 
-const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }) => {
+const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose, getApiKey, rotateApiKey }) => {
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -41,6 +43,11 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
     const handleBack = () => setStep(s => Math.max(1, s - 1));
 
     const handleAnalyzeResume = async () => {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            setError('Ключ Gemini API не настроен. Пожалуйста, добавьте его в настройках.');
+            return;
+        }
         if (!resume.trim()) {
             setError('Пожалуйста, вставьте или загрузите ваше резюме.');
             return;
@@ -48,7 +55,7 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
         setError('');
         setIsLoading(true);
         try {
-            const { settings: extractedSettings, profileName: extractedName } = await extractProfileDataFromResume(resume);
+            const { settings: extractedSettings, profileName: extractedName } = await extractProfileDataFromResume(resume, apiKey, rotateApiKey);
             updateSettings(draft => {
                 draft.positions = extractedSettings.positions || '';
                 draft.salary = extractedSettings.salary || 0;
@@ -66,17 +73,20 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
     };
 
     const handleSuggestPlatforms = async () => {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            setError('Ключ Gemini API не настроен. Пожалуйста, добавьте его в настройках.');
+            return;
+        }
         setError('');
         setIsLoading(true);
         try {
-            const suggested = await suggestPlatforms(settings.positions, settings.location);
-            // FIX: Add the 'type' property to each new platform object to match the Platform interface.
-            // AI-suggested platforms are for web scraping by default.
+            const suggested = await suggestPlatforms(settings.positions, settings.location, apiKey, rotateApiKey);
             const newPlatforms = suggested.map(p => ({
                 id: uuidv4(),
                 name: p.name,
                 url: p.url,
-                enabled: true, // Enable by default
+                enabled: true, 
                 type: 'scrape' as const,
             }));
             updateSettings(draft => {
@@ -85,7 +95,6 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
             setStep(3);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Не удалось подобрать платформы.');
-             // Fallback to default if AI fails
             updateSettings(draft => {
                 draft.platforms = DEFAULT_SEARCH_SETTINGS.platforms;
             });

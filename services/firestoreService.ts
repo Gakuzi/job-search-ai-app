@@ -11,9 +11,9 @@ import {
     getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Profile, Job, SearchSettings, Prompts, Platform } from '../types';
+import type { Profile, Job, SearchSettings, Prompts } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS } from '../constants';
+import { DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS, DEFAULT_RESUME } from '../constants';
 
 
 // --- Profiles ---
@@ -30,20 +30,23 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                 id: doc.id,
                 userId: data.userId || '',
                 name: data.name || '',
-                resume: data.resume || '',
+                resume: data.resume || DEFAULT_RESUME,
                 settings: {
                     ...DEFAULT_SEARCH_SETTINGS,
                     ...settings,
-                    platforms: Array.isArray(settings.platforms) ? settings.platforms : DEFAULT_SEARCH_SETTINGS.platforms,
+                    platforms: Array.isArray(settings.platforms) && settings.platforms.length > 0
+                        ? settings.platforms
+                        : DEFAULT_SEARCH_SETTINGS.platforms,
                 },
                 prompts: {
-                    jobSearch: prompts.jobSearch || DEFAULT_PROMPTS.jobSearch,
-                    resumeAdapt: prompts.resumeAdapt || DEFAULT_PROMPTS.resumeAdapt,
-                    coverLetter: prompts.coverLetter || DEFAULT_PROMPTS.coverLetter,
-                    hrResponseAnalysis: prompts.hrResponseAnalysis || DEFAULT_PROMPTS.hrResponseAnalysis,
-                    shortMessage: prompts.shortMessage || DEFAULT_PROMPTS.shortMessage,
-                    emailJobMatch: prompts.emailJobMatch || DEFAULT_PROMPTS.emailJobMatch,
+                    ...DEFAULT_PROMPTS,
+                    ...prompts,
                 },
+                // Load API keys from Firestore profile
+                geminiApiKeys: Array.isArray(data.geminiApiKeys) ? data.geminiApiKeys : [],
+                activeGeminiApiKeyIndex: typeof data.activeGeminiApiKeyIndex === 'number' ? data.activeGeminiApiKeyIndex : 0,
+                avitoClientId: data.avitoClientId || '',
+                avitoClientSecret: data.avitoClientSecret || '',
             };
             return cleanProfile;
         });

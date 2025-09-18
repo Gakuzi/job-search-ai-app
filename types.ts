@@ -18,7 +18,6 @@ export interface SearchSettings {
     keywords: string;
     minCompanyRating: number;
     platforms: Platform[];
-    // FIX: Add 'limit' property to support Avito API calls which require a result limit.
     limit: number;
 }
 
@@ -108,6 +107,11 @@ export interface Profile {
     resume: string;
     settings: SearchSettings;
     prompts: Prompts;
+    // Store API keys and integration settings in the user's profile in Firestore
+    avitoClientId?: string;
+    avitoClientSecret?: string;
+    geminiApiKeys?: string[];
+    activeGeminiApiKeyIndex?: number;
 }
 
 // --- Google & Gmail Types ---

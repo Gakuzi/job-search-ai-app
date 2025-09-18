@@ -1,27 +1,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform, Profile } from '../types';
-import { getActiveApiKey, rotateApiKey } from './apiKeyService';
 
 // --- API Key Management and Error Handling ---
 
-const handleApiError = (error: unknown) => {
+const handleApiError = (error: unknown, rotateApiKeyCallback: () => void) => {
     const errorString = (error as any)?.message?.toLowerCase() || (error as Error).toString().toLowerCase();
         
     if (errorString.includes('429') || errorString.includes('quota')) {
         console.warn('API key quota exceeded. Rotating key.');
-        rotateApiKey();
+        rotateApiKeyCallback();
         throw new Error("Лимит запросов для текущего API ключа исчерпан. Мы автоматически переключились на следующий ключ. Пожалуйста, повторите ваше действие.");
     }
     
     if (errorString.includes('api key not valid')) {
         console.error('Invalid API key detected. Rotating key.');
-        rotateApiKey();
+        rotateApiKeyCallback();
         throw new Error("Текущий API ключ недействителен. Мы автоматически переключились на следующий. Проверьте ключи в настройках.");
     }
     
     if (errorString.includes('failed to fetch')) {
         console.warn('A "Failed to fetch" error occurred. This could be a transient network issue or a problem with the current API key. Rotating key as a precaution.');
-        rotateApiKey();
+        rotateApiKeyCallback();
         throw new Error("Произошла сетевая ошибка при обращении к Gemini API. Это может быть временно. Мы переключились на следующий API ключ; попробуйте еще раз.");
     }
     
@@ -29,26 +28,32 @@ const handleApiError = (error: unknown) => {
     throw error; // Re-throw other unhandled errors
 };
 
-const runAiOperation = async <T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> => {
-    const apiKey = getActiveApiKey();
+const runAiOperation = async <T>(
+    apiKey: string,
+    rotateApiKeyCallback: () => void,
+    operation: (ai: GoogleGenAI) => Promise<T>
+): Promise<T> => {
     if (!apiKey) {
-        throw new Error("Ключ Gemini API не настроен. Добавьте его в Настройки -> API Ключи.");
+        throw new Error("Ключ Gemini API не настроен. Добавьте его в Настройках.");
     }
 
     try {
         const ai = new GoogleGenAI({ apiKey });
         return await operation(ai);
     } catch (error) {
-        handleApiError(error);
+        handleApiError(error, rotateApiKeyCallback);
         // This line will not be reached because handleApiError throws, but it's needed for type safety.
         throw error;
     }
 };
 
-async function* runStreamingAiOperation(operation: (ai: GoogleGenAI) => Promise<AsyncGenerator<string>>): AsyncGenerator<string> {
-    const apiKey = getActiveApiKey();
+async function* runStreamingAiOperation(
+    apiKey: string,
+    rotateApiKeyCallback: () => void,
+    operation: (ai: GoogleGenAI) => Promise<AsyncGenerator<string>>
+): AsyncGenerator<string> {
     if (!apiKey) {
-        throw new Error("Ключ Gemini API не настроен. Добавьте его в Настройки -> API Ключи.");
+        throw new Error("Ключ Gemini API не настроен. Добавьте его в Настройках.");
     }
 
     try {
@@ -58,7 +63,7 @@ async function* runStreamingAiOperation(operation: (ai: GoogleGenAI) => Promise<
             yield chunk;
         }
     } catch (error) {
-        handleApiError(error);
+        handleApiError(error, rotateApiKeyCallback);
     }
 }
 
@@ -80,7 +85,13 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
 
 // --- Core AI Services ---
 
-export const findJobsOnRealWebsite = async (promptTemplate: string, settings: SearchSettings, platform: Platform): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes'>[]> => {
+export const findJobsOnRealWebsite = async (
+    promptTemplate: string,
+    settings: SearchSettings,
+    platform: Platform,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes'>[]> => {
     const query = encodeURIComponent(`${settings.positions} ${settings.location}`);
     const searchUrl = `${platform.url}?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`;
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
@@ -104,7 +115,7 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, settings: Se
 
     const fullPrompt = `${prompt}\n${htmlContent}`;
 
-    const responseText = await runAiOperation(async (ai) => {
+    const responseText = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: fullPrompt,
@@ -149,10 +160,15 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, settings: Se
 };
 
 
-export const analyzeAndRankJobs = async (jobs: Job[], profile: Profile): Promise<Job[]> => {
+export const analyzeAndRankJobs = async (
+    jobs: Job[],
+    profile: Profile,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<Job[]> => {
     if (jobs.length === 0) return [];
 
-    const resultText = await runAiOperation(async (ai) => {
+    const resultText = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = `
 # ЗАДАЧА: АНАЛИЗ СПИСКА ВАКАНСИЙ
 Ты — AI-ассистент, который помогает соискателю найти лучшие вакансии.
@@ -187,14 +203,20 @@ export const analyzeAndRankJobs = async (jobs: Job[], profile: Profile): Promise
 };
 
 
-export async function* adaptResume(promptTemplate: string, resume: string, job: Job): AsyncGenerator<string> {
+export async function* adaptResume(
+    promptTemplate: string,
+    resume: string,
+    job: Job,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): AsyncGenerator<string> {
     const prompt = promptTemplate
       .replace('{jobTitle}', job.title)
       .replace('{jobCompany}', job.company);
     
     const fullPrompt = `${prompt}\n\n## Базовое резюме:\n${resume}\n\n## Описание вакансии:\n${job.description}\n\nОбязанности:\n${job.responsibilities.join('\n- ')}`;
     
-    yield* runStreamingAiOperation(async (ai) => {
+    yield* runStreamingAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const response = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
             contents: fullPrompt
@@ -208,8 +230,14 @@ export async function* adaptResume(promptTemplate: string, resume: string, job: 
     });
 }
 
-export const generateCoverLetter = async (promptTemplate: string, job: Job, candidateName: string): Promise<{ subject: string; body: string }> => {
-    return runAiOperation(async (ai) => {
+export const generateCoverLetter = async (
+    promptTemplate: string,
+    job: Job,
+    candidateName: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<{ subject: string; body: string }> => {
+    return runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = promptTemplate
             .replace('{jobTitle}', job.title)
             .replace('{jobCompany}', job.company);
@@ -223,8 +251,14 @@ export const generateCoverLetter = async (promptTemplate: string, job: Job, cand
     });
 };
 
-export const generateShortMessage = async (promptTemplate: string, job: Job, candidateName: string): Promise<string> => {
-    return runAiOperation(async (ai) => {
+export const generateShortMessage = async (
+    promptTemplate: string,
+    job: Job,
+    candidateName: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<string> => {
+    return runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = promptTemplate
             .replace('{jobTitle}', job.title)
             .replace('{jobCompany}', job.company)
@@ -238,7 +272,12 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
     });
 };
 
-export async function* getInterviewQuestions(job: Job, resume: string): AsyncGenerator<string> {
+export async function* getInterviewQuestions(
+    job: Job,
+    resume: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): AsyncGenerator<string> {
     const prompt = `
 Действуй как опытный HR-менеджер и карьерный коуч.
 Подготовь кандидата к собеседованию на должность "${job.title}" в компанию "${job.company}".
@@ -254,7 +293,7 @@ ${resume}
 **Описание:** ${job.description}
 **Обязанности:** ${job.responsibilities.join(', ')}
     `;
-    yield* runStreamingAiOperation(async (ai) => {
+    yield* runStreamingAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const response = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
             contents: prompt
@@ -268,8 +307,12 @@ ${resume}
     });
 }
 
-export const extractProfileDataFromResume = async (resumeText: string): Promise<{ settings: Partial<SearchSettings>, profileName: string }> => {
-    const resultText = await runAiOperation(async (ai) => {
+export const extractProfileDataFromResume = async (
+    resumeText: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<{ settings: Partial<SearchSettings>, profileName: string }> => {
+    const resultText = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = `
 # ЗАДАЧА: АНАЛИЗ РЕЗЮМЕ ДЛЯ НАСТРОЙКИ ПРОФИЛЯ
 Проанализируй текст резюме и извлеки из него ключевую информацию для создания поискового профиля.
@@ -282,7 +325,7 @@ export const extractProfileDataFromResume = async (resumeText: string): Promise<
     *   \`location\` (string): Город.
     *   \`skills\` (string): Ключевые навыки и технологии через запятую.
 
-2.  **profileName**: Создай информативное название для профиля в формате "[Имя Фамилия] - [Основная должность] (от [Зарплата] [Валюта])". Извлеки данные из резюме. Если зарплата 0, не включай ее в название.
+2.  **profileName**: Создай информативное название для профиля в формате "[Имя Фамилия] - [Основная должность]". Извлеки данные из резюме.
 
 Текст резюме для анализа:
 ---
@@ -322,8 +365,13 @@ ${resumeText}
 };
 
 
-export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
-    const result = await runAiOperation(async (ai) => {
+export const analyzeHrResponse = async (
+    promptTemplate: string,
+    emailText: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<KanbanStatus> => {
+    const result = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = `${promptTemplate}\n${emailText}`;
         const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
         return response.text.trim().toLowerCase();
@@ -337,8 +385,13 @@ export const analyzeHrResponse = async (promptTemplate: string, emailText: strin
     return 'tracking';
 };
 
-export const matchEmailToJob = async (emailText: string, jobs: Job[]): Promise<string> => {
-    const result = await runAiOperation(async (ai) => {
+export const matchEmailToJob = async (
+    emailText: string,
+    jobs: Job[],
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<string> => {
+    const result = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const simplifiedJobs = jobs.map(({ id, title, company }) => ({ id, title, company }));
         const prompt = `
 # ЗАДАЧА: СОПОСТАВЛЕНИЕ EMAIL С ВАКАНСИЕЙ
@@ -364,8 +417,13 @@ ${JSON.stringify(simplifiedJobs, null, 2)}
     return "UNKNOWN";
 };
 
-export const suggestPlatforms = async (role: string, region: string): Promise<Omit<Platform, 'id' | 'enabled'>[]> => {
-    const resultText = await runAiOperation(async (ai) => {
+export const suggestPlatforms = async (
+    role: string,
+    region: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<Omit<Platform, 'id' | 'enabled'>[]> => {
+    const resultText = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = `
 # ЗАДАЧА: ПОДБОР ПЛОЩАДОК ДЛЯ ПОИСКА ВАКАНСИЙ
 Проанализируй должность и регион, и предложи 3-4 наиболее подходящих сайта (job boards) для поиска вакансий.
@@ -408,7 +466,11 @@ export const suggestPlatforms = async (role: string, region: string): Promise<Om
     return parseJsonResponse<Omit<Platform, 'id' | 'enabled'>[]>(resultText, 'подбора платформ');
 };
 
-export const checkJobStatus = async (jobUrl: string): Promise<'active' | 'archived'> => {
+export const checkJobStatus = async (
+    jobUrl: string,
+    apiKey: string,
+    rotateApiKeyCallback: () => void
+): Promise<'active' | 'archived'> => {
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(jobUrl)}`;
     let htmlContent: string;
     try {
@@ -422,7 +484,7 @@ export const checkJobStatus = async (jobUrl: string): Promise<'active' | 'archiv
         return 'active'; // Assume active on error
     }
 
-    const resultText = await runAiOperation(async (ai) => {
+    const resultText = await runAiOperation(apiKey, rotateApiKeyCallback, async (ai) => {
         const prompt = `
 # ЗАДАЧА: ПРОВЕРКА СТАТУСА ВАКАНСИИ
 Проанализируй HTML-код страницы. Определи, является ли вакансия все еще открытой и активной.

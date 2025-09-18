@@ -6,7 +6,8 @@ type AvitoJobResult = Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' |
 
 const functions = getFunctions(app);
 const findAvitoJobsCallable = httpsCallable<{
-    apiKey: string, 
+    clientId: string;
+    clientSecret: string;
     searchSettings: {
         query: string;
         location: string;
@@ -15,10 +16,11 @@ const findAvitoJobsCallable = httpsCallable<{
     }
 }, { jobs: AvitoJobResult[] }>(functions, 'findAvitoJobs');
 
-export const findJobsOnAvitoAPI = async (settings: SearchSettings, apiKey: string): Promise<AvitoJobResult[]> => {
+export const findJobsOnAvitoAPI = async (settings: SearchSettings, clientId: string, clientSecret: string): Promise<AvitoJobResult[]> => {
     try {
         const result = await findAvitoJobsCallable({
-            apiKey,
+            clientId,
+            clientSecret,
             searchSettings: {
                 query: settings.positions,
                 location: settings.location,

@@ -3,7 +3,7 @@ import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 
-import Header from './components/Header';
+import Sidebar from './components/Sidebar';
 import ScanResults from './components/ScanResults';
 import ApplicationTracker from './components/ApplicationTracker';
 import StatusBar from './components/StatusBar';
@@ -15,8 +15,6 @@ import GmailScannerModal from './components/GmailScannerModal';
 import AuthGuard from './components/AuthGuard';
 import ConfigurationError from './components/ConfigurationError';
 import SettingsModal from './components/SettingsModal';
-import { SparklesIcon } from './components/icons/SparklesIcon';
-
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
@@ -85,15 +83,7 @@ function App() {
     
     const [modal, setModal] = useImmer<ModalState>({ type: 'none' });
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    // FIX: Add state for the settings panel expansion.
     const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
-    
-    // FIX: Cast import.meta to any to access env properties without TypeScript errors.
-    const initialGeminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-    const [apiKeys, setApiKeys] = useLocalStorage<string[]>('gemini-api-keys', initialGeminiKey ? [initialGeminiKey] : []);
-    const [activeApiKeyIndex, setActiveApiKeyIndex] = useLocalStorage<number>('active-api-key-index', 0);
-    const [avitoApiKey, setAvitoApiKey] = useLocalStorage<string>('avito-api-key', '');
-
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
@@ -105,6 +95,31 @@ function App() {
 
     const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('...');
     const isGoogleConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_');
+    
+    const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
+
+    // --- API Key Management (from profile) ---
+    const getActiveGeminiApiKey = useCallback((): string | null => {
+        if (!activeProfile || !activeProfile.geminiApiKeys || activeProfile.geminiApiKeys.length === 0) {
+            return (import.meta as any).env.VITE_GEMINI_API_KEY || null;
+        }
+        const index = activeProfile.activeGeminiApiKeyIndex || 0;
+        return activeProfile.geminiApiKeys[index % activeProfile.geminiApiKeys.length] || null;
+    }, [activeProfile]);
+
+    const rotateGeminiApiKey = useCallback(() => {
+        if (!activeProfile || !activeProfile.geminiApiKeys || activeProfile.geminiApiKeys.length <= 1) return;
+        
+        const currentIndex = activeProfile.activeGeminiApiKeyIndex || 0;
+        const nextIndex = (currentIndex + 1) % activeProfile.geminiApiKeys.length;
+        
+        updateProfile({
+            ...activeProfile,
+            activeGeminiApiKeyIndex: nextIndex,
+        });
+
+    }, [activeProfile]);
+
 
     // --- Effects ---
 
@@ -244,7 +259,6 @@ function App() {
         };
     }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId, setModal]);
 
-    const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
     
     // --- Google Auth Handlers ---
     
@@ -295,6 +309,10 @@ function App() {
             resume: initialData ? initialData.resume : DEFAULT_RESUME,
             settings: initialData ? initialData.settings : DEFAULT_SEARCH_SETTINGS,
             prompts: DEFAULT_PROMPTS,
+            geminiApiKeys: [],
+            activeGeminiApiKeyIndex: 0,
+            avitoClientId: '',
+            avitoClientSecret: '',
         };
         const createdProfile = await addProfile(newProfileData);
         setActiveProfileId(createdProfile.id);
@@ -331,12 +349,19 @@ function App() {
             const enabledPlatforms = activeProfile.settings.platforms.filter(p => p.enabled);
             if (enabledPlatforms.length === 0) {
                 setStatus(AppStatus.Error);
-                setMessage("Нет активных площадок для поиска. Включите хотя бы одну в Настройках -> Платформы.");
+                setMessage("Нет активных площадок для поиска. Включите хотя бы одну в Настройках.");
                 return;
             }
     
             const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
             let allRawResults: Job[] = [];
+            const apiKey = getActiveGeminiApiKey();
+
+            if (!apiKey) {
+                setStatus(AppStatus.Error);
+                setMessage("Ключ Gemini API не найден. Добавьте его в Настройках.");
+                return;
+            }
             
             for (let i = 0; i < enabledPlatforms.length; i++) {
                 const platform = enabledPlatforms[i];
@@ -345,14 +370,14 @@ function App() {
                 let platformResults: Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes'>[] = [];
 
                 if (platform.type === 'api' && platform.name === 'Avito') {
-                    if (!avitoApiKey) {
+                    if (!activeProfile.avitoClientId || !activeProfile.avitoClientSecret) {
                         setStatus(AppStatus.Error);
-                        setMessage(`Ключ Avito API не найден. Добавьте его в Настройках -> API Ключи.`);
+                        setMessage(`Ключи Avito API не найдены. Добавьте их в Настройках.`);
                         return;
                     }
-                    platformResults = await findJobsOnAvitoAPI(activeProfile.settings, avitoApiKey);
+                    platformResults = await findJobsOnAvitoAPI(activeProfile.settings, activeProfile.avitoClientId, activeProfile.avitoClientSecret);
                 } else {
-                    platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.settings, platform);
+                    platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.settings, platform, apiKey, rotateGeminiApiKey);
                 }
                 
                 const newJobsFromPlatform = platformResults
@@ -378,7 +403,7 @@ function App() {
     
             setMessage(`Сбор завершен. Найдено ${allRawResults.length} вакансий. ИИ проводит анализ на соответствие...`);
             
-            const analyzedJobs = await analyzeAndRankJobs(allRawResults, activeProfile);
+            const analyzedJobs = await analyzeAndRankJobs(allRawResults, activeProfile, apiKey, rotateGeminiApiKey);
             setFoundJobs(analyzedJobs);
     
             setMessage(`Анализ завершен. ${analyzedJobs.filter(j => j.matchAnalysis).length} вакансий рекомендовано.`);
@@ -425,6 +450,12 @@ function App() {
 
     const handleRefreshJobStatuses = async () => {
         if (!activeProfile) return;
+        const apiKey = getActiveGeminiApiKey();
+        if (!apiKey) {
+            setStatus(AppStatus.Error);
+            setMessage("Ключ Gemini API не найден. Добавьте его в Настройках.");
+            return;
+        }
 
         const jobsToUpdate = jobs.filter(j =>
             j.profileId === activeProfile.id &&
@@ -445,7 +476,7 @@ function App() {
             const job = jobsToUpdate[i];
             setMessage(`Проверяю статусы ${jobsToUpdate.length} вакансий... (${i + 1}/${jobsToUpdate.length}) - ${job.title}`);
             try {
-                const status = await checkJobStatus(job.url);
+                const status = await checkJobStatus(job.url, apiKey, rotateGeminiApiKey);
                 if (status === 'archived') {
                     handleUpdateJob(job.id, { kanbanStatus: 'archive' });
                     handleAddInteraction(job.id, 'status_change', `Статус автоматически изменен на "Архив" (вакансия закрыта)`);
@@ -463,10 +494,15 @@ function App() {
 
     // --- AI Actions ---
 
-    const runAiAction = async (title: string, action: () => Promise<string>) => {
+    const runAiAction = async (title: string, action: (apiKey: string, rotateCb: () => void) => Promise<string>) => {
         setModal({ type: 'aiContent', title, content: '', isLoading: true });
+        const apiKey = getActiveGeminiApiKey();
+         if (!apiKey) {
+            setModal({ type: 'aiContent', title, content: `Ошибка: Ключ Gemini API не настроен.`, isLoading: false });
+            return;
+        }
         try {
-            const content = await action();
+            const content = await action(apiKey, rotateGeminiApiKey);
             setModal({ type: 'aiContent', title, content, isLoading: false });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
@@ -474,10 +510,15 @@ function App() {
         }
     };
     
-    const runStreamingAiAction = async (title: string, action: () => AsyncGenerator<string>) => {
+    const runStreamingAiAction = async (title: string, action: (apiKey: string, rotateCb: () => void) => AsyncGenerator<string>) => {
         setModal({ type: 'aiContent', title, content: '', isLoading: true });
+        const apiKey = getActiveGeminiApiKey();
+        if (!apiKey) {
+            setModal({ type: 'aiContent', title, content: `Ошибка: Ключ Gemini API не настроен.`, isLoading: false });
+            return;
+        }
         try {
-            const stream = action();
+            const stream = action(apiKey, rotateGeminiApiKey);
             let firstChunk = true;
             for await (const chunk of stream) {
                 if (firstChunk) {
@@ -507,7 +548,7 @@ function App() {
         if (!activeProfile) return;
         runStreamingAiAction(
             `Адаптированное резюме для "${job.title}"`,
-            () => adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job)
+            (apiKey, rotateCb) => adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job, apiKey, rotateCb)
         );
     };
 
@@ -515,8 +556,8 @@ function App() {
         if (!activeProfile) return;
         runAiAction(
             `Сопроводительное письмо для "${job.company}"`,
-            async () => {
-                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+            async (apiKey, rotateCb) => {
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name, apiKey, rotateCb);
                 return `Subject: ${subject}\n\n${body}`;
             }
         );
@@ -526,17 +567,23 @@ function App() {
         if (!activeProfile) return;
         runStreamingAiAction(
             `Подготовка к собеседованию на "${job.title}"`,
-            () => getInterviewQuestions(job, activeProfile.resume)
+            (apiKey, rotateCb) => getInterviewQuestions(job, activeProfile.resume, apiKey, rotateCb)
         );
     };
     
     const handleAnalyzeHrResponse = async (job: Job, emailText: string) => {
         if (!activeProfile) return;
+        const apiKey = getActiveGeminiApiKey();
+        if (!apiKey) {
+             setStatus(AppStatus.Error);
+             setMessage("Ключ Gemini API не настроен.");
+            return;
+        }
         setModal({ type: 'none' });
         setStatus(AppStatus.Loading);
         setMessage("Анализирую ответ от HR...");
         try {
-            const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailText);
+            const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailText, apiKey, rotateGeminiApiKey);
             handleUpdateJobStatus(job.id, newStatus);
             setStatus(AppStatus.Success);
             setMessage(`Статус вакансии "${job.title}" обновлен на "${kanbanStatusMap[newStatus]}".`);
@@ -548,13 +595,18 @@ function App() {
     
     const handleQuickApply = async (action: 'email' | 'whatsapp' | 'telegram', job: Job) => {
         if (!activeProfile) return;
-
+        const apiKey = getActiveGeminiApiKey();
+        if (!apiKey) {
+             setStatus(AppStatus.Error);
+             setMessage("Ключ Gemini API не настроен.");
+            return;
+        }
         setStatus(AppStatus.Loading);
         
         try {
             if (action === 'email') {
                 setMessage('ИИ готовит текст для email...');
-                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name, apiKey, rotateGeminiApiKey);
 
                 if (isGoogleConnected && googleUser?.email) {
                     await sendEmail({
@@ -573,7 +625,7 @@ function App() {
                 }
             } else { // Messengers
                 setMessage('ИИ готовит сообщение для мессенджера...');
-                const message = await generateShortMessage(activeProfile.prompts.shortMessage, job, activeProfile.name);
+                const message = await generateShortMessage(activeProfile.prompts.shortMessage, job, activeProfile.name, apiKey, rotateGeminiApiKey);
                  let url: string;
                 if (action === 'whatsapp') {
                     const phone = job.contacts?.phone?.replace(/\D/g, ''); // Clean phone number
@@ -634,6 +686,12 @@ function App() {
     
     const handleAnalyzeScannedReply = async (emailText: string) => {
         if (!activeProfile) return;
+        const apiKey = getActiveGeminiApiKey();
+        if (!apiKey) {
+             setStatus(AppStatus.Error);
+             setMessage("Ключ Gemini API не настроен.");
+            return;
+        }
         
         try {
             setModal(prevModal => {
@@ -643,7 +701,7 @@ function App() {
                 return prevModal;
             });
 
-            const matchedJobId = await matchEmailToJob(emailText, jobs);
+            const matchedJobId = await matchEmailToJob(emailText, jobs, apiKey, rotateGeminiApiKey);
             const matchedJob = jobs.find(j => j.id === matchedJobId);
             
             if (!matchedJob) {
@@ -707,6 +765,8 @@ function App() {
                         handleAddProfile(result);
                         setModal({ type: 'none' });
                     }}
+                    getApiKey={getActiveGeminiApiKey}
+                    rotateApiKey={rotateGeminiApiKey}
                 />;
             case 'hrAnalysis':
                 return <HrAnalysisModal 
@@ -737,11 +797,13 @@ function App() {
         return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
     
-    // FIX: Reconstruct the missing JSX for the main application layout.
     return (
         <AuthGuard user={user} loading={isAuthLoading}>
-            <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-50`}>
-                <Header
+            <div className="flex h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-50">
+                <Sidebar
+                    view={view}
+                    setView={setView}
+                    foundJobsCount={foundJobs.length}
                     theme={theme}
                     setTheme={setTheme}
                     user={user}
@@ -752,67 +814,54 @@ function App() {
                     onSwitchProfile={setActiveProfileId}
                 />
 
-                <main className="container mx-auto px-4 md:px-6 py-6 flex-grow w-full">
-                    <SettingsPanel
-                        profiles={profiles}
-                        activeProfile={activeProfile}
-                        onAddProfile={() => handleAddProfile()}
-                        onDeleteProfile={handleDeleteProfile}
-                        onSwitchProfile={setActiveProfileId}
-                        onUpdateProfile={handleUpdateProfile}
-                        onSearch={handleSearch}
-                        status={status}
-                        isSettingsExpanded={isSettingsExpanded}
-                        setIsSettingsExpanded={setIsSettingsExpanded}
-                        googleUser={googleUser}
-                        isGoogleConnected={isGoogleConnected}
-                        onGoogleSignIn={handleGoogleSignIn}
-                        onGoogleSignOut={handleGoogleSignOut}
-                    />
-
-                    <StatusBar status={status} message={message} />
-
-                    <div className="flex justify-center mb-4 border-b border-slate-200 dark:border-slate-700">
-                        <button
-                            onClick={() => setView('applications')}
-                            className={`px-6 py-3 font-medium border-b-2 ${view === 'applications' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            Мои Отклики
-                        </button>
-                        <button
-                            onClick={() => setView('scanResults')}
-                            className={`px-6 py-3 font-medium border-b-2 ${view === 'scanResults' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            Результаты ({foundJobs.length})
-                        </button>
-                    </div>
-
-                    <div className="mt-6">
-                    {view === 'applications' ? (
-                        <ApplicationTracker
-                            jobs={jobs.filter(j => j.profileId === activeProfile?.id)}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <main className="flex-1 overflow-y-auto p-6">
+                        <SettingsPanel
                             profiles={profiles}
-                            onUpdateJobStatus={handleUpdateJobStatus}
-                            onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
-                            onAdaptResume={handleAdaptResume}
-                            onGenerateEmail={handleGenerateEmail}
-                            onQuickApplyEmail={handleQuickApplyFromCard}
+                            activeProfile={activeProfile}
+                            onAddProfile={() => handleAddProfile()}
+                            onDeleteProfile={handleDeleteProfile}
+                            onSwitchProfile={setActiveProfileId}
+                            onUpdateProfile={handleUpdateProfile}
+                            onSearch={handleSearch}
+                            status={status}
+                            isSettingsExpanded={isSettingsExpanded}
+                            setIsSettingsExpanded={setIsSettingsExpanded}
+                            googleUser={googleUser}
                             isGoogleConnected={isGoogleConnected}
-                            isGapiReady={isGapiReady}
-                            onScanReplies={handleOpenGmailScanner}
-                            onRefreshStatuses={handleRefreshJobStatuses}
+                            onGoogleSignIn={handleGoogleSignIn}
+                            onGoogleSignOut={handleGoogleSignOut}
                         />
-                    ) : (
-                        <ScanResults
-                            jobs={foundJobs}
-                            onSaveJobs={handleSaveScannedJobs}
-                            onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
-                            onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
-                            onCompareJobs={(jobs) => setModal({ type: 'jobComparison', jobs })}
-                        />
-                    )}
-                    </div>
-                </main>
+
+                        <StatusBar status={status} message={message} />
+
+                        <div className="mt-6">
+                        {view === 'applications' ? (
+                            <ApplicationTracker
+                                jobs={jobs.filter(j => j.profileId === activeProfile?.id)}
+                                profiles={profiles}
+                                onUpdateJobStatus={handleUpdateJobStatus}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onAdaptResume={handleAdaptResume}
+                                onGenerateEmail={handleGenerateEmail}
+                                onQuickApplyEmail={handleQuickApplyFromCard}
+                                isGoogleConnected={isGoogleConnected}
+                                isGapiReady={isGapiReady}
+                                onScanReplies={handleOpenGmailScanner}
+                                onRefreshStatuses={handleRefreshJobStatuses}
+                            />
+                        ) : (
+                            <ScanResults
+                                jobs={foundJobs}
+                                onSaveJobs={handleSaveScannedJobs}
+                                onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onCompareJobs={(jobs) => setModal({ type: 'jobComparison', jobs })}
+                            />
+                        )}
+                        </div>
+                    </main>
+                </div>
 
                 {renderModal()}
                 {isSettingsModalOpen && (
@@ -829,12 +878,6 @@ function App() {
                         isGoogleConnected={isGoogleConnected}
                         onGoogleSignIn={handleGoogleSignIn}
                         onGoogleSignOut={handleGoogleSignOut}
-                        apiKeys={apiKeys}
-                        setApiKeys={setApiKeys}
-                        activeApiKeyIndex={activeApiKeyIndex}
-                        setActiveApiKeyIndex={setActiveApiKeyIndex}
-                        avitoApiKey={avitoApiKey}
-                        setAvitoApiKey={setAvitoApiKey}
                     />
                 )}
             </div>
@@ -842,5 +885,4 @@ function App() {
     );
 }
 
-// FIX: Add default export to the App component to resolve the module import error.
 export default App;
