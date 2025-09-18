@@ -41,9 +41,10 @@ export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
     minCompanyRating: 0,
     limit: 10,
     platforms: [
-        { id: 'default-1', name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true },
-        { id: 'default-2', name: 'Habr Career', url: 'https://career.habr.com/vacancies', enabled: true },
-        { id: 'default-3', name: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/', enabled: false },
+        { id: 'default-1', name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true, type: 'scrape' },
+        { id: 'default-2', name: 'Habr Career', url: 'https://career.habr.com/vacancies', enabled: true, type: 'scrape' },
+        { id: 'default-4', name: 'Avito', url: 'https://api.avito.ru', enabled: true, type: 'api' },
+        { id: 'default-3', name: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/', enabled: false, type: 'scrape' },
     ],
 };
 

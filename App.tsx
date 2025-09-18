@@ -34,6 +34,7 @@ import {
     suggestPlatforms,
     analyzeAndRankJobs
 } from './services/geminiService';
+import { findJobsOnAvitoAPI } from './services/avitoService';
 import { auth, firebaseConfig } from './services/firebase';
 import {
     subscribeToProfiles,
@@ -83,6 +84,7 @@ function App() {
     const initialGeminiKey = import.meta.env.VITE_GEMINI_API_KEY;
     const [apiKeys, setApiKeys] = useLocalStorage<string[]>('gemini-api-keys', initialGeminiKey ? [initialGeminiKey] : []);
     const [activeApiKeyIndex, setActiveApiKeyIndex] = useLocalStorage<number>('active-api-key-index', 0);
+    const [avitoApiKey, setAvitoApiKey] = useLocalStorage<string>('avito-api-key', '');
 
 
     // Google Auth State
@@ -310,13 +312,13 @@ function App() {
 
     const handleSearch = async () => {
         if (!activeProfile || !user) return;
-
+    
         setStatus(AppStatus.Loading);
         setMessage('Начинаю сбор вакансий...');
         
         setFoundJobs([]);
         setView('scanResults');
-
+    
         try {
             const enabledPlatforms = activeProfile.settings.platforms.filter(p => p.enabled);
             if (enabledPlatforms.length === 0) {
@@ -324,14 +326,26 @@ function App() {
                 setMessage("Нет активных площадок для поиска. Включите хотя бы одну в Настройках -> Платформы.");
                 return;
             }
-
+    
             const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
             let allRawResults: Job[] = [];
             
             for (let i = 0; i < enabledPlatforms.length; i++) {
                 const platform = enabledPlatforms[i];
                 setMessage(`Этап ${i + 1}/${enabledPlatforms.length}: Сканирую ${platform.name}...`);
-                const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.settings, platform);
+                
+                let platformResults: Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId' | 'history' | 'notes'>[] = [];
+
+                if (platform.type === 'api' && platform.name === 'Avito') {
+                    if (!avitoApiKey) {
+                        setStatus(AppStatus.Error);
+                        setMessage(`Ключ Avito API не найден. Добавьте его в Настройках -> API Ключи.`);
+                        return;
+                    }
+                    platformResults = await findJobsOnAvitoAPI(activeProfile.settings, avitoApiKey);
+                } else {
+                    platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.settings, platform);
+                }
                 
                 const newJobsFromPlatform = platformResults
                     .filter(job => !existingJobUrls.has(job.url) && !allRawResults.some(r => r.url === job.url))
@@ -347,22 +361,22 @@ function App() {
                 allRawResults = [...allRawResults, ...newJobsFromPlatform];
                 setFoundJobs([...allRawResults]);
             }
-
+    
             if (allRawResults.length === 0) {
                 setMessage('Новых вакансий не найдено. Попробуйте изменить параметры поиска или добавить больше площадок в настройках.');
                 setStatus(AppStatus.Success);
                 return;
             }
-
+    
             setMessage(`Сбор завершен. Найдено ${allRawResults.length} вакансий. ИИ проводит анализ на соответствие...`);
             
             const analyzedJobs = await analyzeAndRankJobs(allRawResults, activeProfile);
             setFoundJobs(analyzedJobs);
-
+    
             setMessage(`Анализ завершен. ${analyzedJobs.filter(j => j.matchAnalysis).length} вакансий рекомендовано.`);
             setStatus(AppStatus.Success);
             
-
+    
         } catch (error) {
             setStatus(AppStatus.Error);
             setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
@@ -768,6 +782,8 @@ function App() {
                     setApiKeys={setApiKeys}
                     activeApiKeyIndex={activeApiKeyIndex}
                     setActiveApiKeyIndex={setActiveApiKeyIndex}
+                    avitoApiKey={avitoApiKey}
+                    setAvitoApiKey={setAvitoApiKey}
                 />
                 {renderModal()}
             </div>

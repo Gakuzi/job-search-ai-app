@@ -70,11 +70,14 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
         setIsLoading(true);
         try {
             const suggested = await suggestPlatforms(settings.positions, settings.location);
+            // FIX: Add the 'type' property to each new platform object to match the Platform interface.
+            // AI-suggested platforms are for web scraping by default.
             const newPlatforms = suggested.map(p => ({
                 id: uuidv4(),
                 name: p.name,
                 url: p.url,
                 enabled: true, // Enable by default
+                type: 'scrape' as const,
             }));
             updateSettings(draft => {
                 draft.platforms = newPlatforms;

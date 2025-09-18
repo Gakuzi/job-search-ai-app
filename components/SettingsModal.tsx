@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Profile, GoogleUser, Platform } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
@@ -34,6 +35,8 @@ interface SettingsModalProps {
     setApiKeys: React.Dispatch<React.SetStateAction<string[]>>;
     activeApiKeyIndex: number;
     setActiveApiKeyIndex: React.Dispatch<React.SetStateAction<number>>;
+    avitoApiKey: string;
+    setAvitoApiKey: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -53,6 +56,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setApiKeys,
     activeApiKeyIndex,
     setActiveApiKeyIndex,
+    avitoApiKey,
+    setAvitoApiKey,
 }) => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('profiles');
     const [profileName, setProfileName] = useState(activeProfile?.name || '');
@@ -94,7 +99,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     
     const handleAddPlatform = () => {
-        const newPlatform: Platform = { id: uuidv4(), name: 'Новая площадка', url: 'https://example.com/vacancies', enabled: false };
+        const newPlatform: Platform = { id: uuidv4(), name: 'Новая площадка', url: 'https://example.com/vacancies', enabled: false, type: 'scrape' };
         onUpdateProfile(draft => {
             draft.settings.platforms.push(newPlatform);
         });
@@ -229,36 +234,53 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                         )}
                          {activeTab === 'apiKeys' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <h3 className="text-lg font-semibold">Пул API ключей Gemini</h3>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">Добавьте несколько API ключей. Если один из них исчерпает дневной лимит, система автоматически переключится на следующий. Активный ключ подсвечен синим.</p>
+                            <div className="space-y-6">
+                                <div className="space-y-4">
+                                    <div>
+                                        <h3 className="text-lg font-semibold">API Ключ Avito</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Вставьте ваш ключ для прямого доступа к API Avito. Это обеспечит самый быстрый и точный поиск по этой платформе.</p>
+                                    </div>
+                                    <div className="p-3 rounded-lg flex items-center gap-3 bg-slate-100 dark:bg-slate-700">
+                                         <input 
+                                            type="text"
+                                            value={avitoApiKey}
+                                            onChange={(e) => setAvitoApiKey(e.target.value)}
+                                            placeholder="Вставьте ваш Avito API ключ"
+                                            className="w-full input-style font-mono text-sm"
+                                        />
+                                    </div>
                                 </div>
-                                <div className="space-y-3">
-                                    {apiKeys.map((key, index) => (
-                                        <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${index === activeApiKeyIndex ? 'bg-blue-50 dark:bg-slate-800 border border-blue-500' : 'bg-slate-100 dark:bg-slate-700'}`}>
-                                            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{index + 1}.</span>
-                                            <input 
-                                                type="text"
-                                                value={key}
-                                                onChange={(e) => handleKeyChange(index, e.target.value)}
-                                                placeholder="Вставьте ваш Gemini API ключ"
-                                                className="w-full input-style font-mono text-sm"
-                                            />
-                                            {getStatusIndicator(keyTestStatus[index] || 'idle')}
-                                            <button onClick={() => handleTestKey(index, key)} className="btn-secondary text-sm" disabled={keyTestStatus[index] === 'testing'}>
-                                                {keyTestStatus[index] === 'testing' ? '...' : 'Тест'}
-                                            </button>
-                                            <button onClick={() => handleRemoveKey(index)} className="btn-danger text-sm">
-                                                Удалить
-                                            </button>
-                                        </div>
-                                    ))}
+                                <div className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-700">
+                                    <div>
+                                        <h3 className="text-lg font-semibold">Пул API ключей Gemini</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Добавьте несколько API ключей. Если один из них исчерпает дневной лимит, система автоматически переключится на следующий. Активный ключ подсвечен синим.</p>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {apiKeys.map((key, index) => (
+                                            <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${index === activeApiKeyIndex ? 'bg-blue-50 dark:bg-slate-800 border border-blue-500' : 'bg-slate-100 dark:bg-slate-700'}`}>
+                                                <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{index + 1}.</span>
+                                                <input 
+                                                    type="text"
+                                                    value={key}
+                                                    onChange={(e) => handleKeyChange(index, e.target.value)}
+                                                    placeholder="Вставьте ваш Gemini API ключ"
+                                                    className="w-full input-style font-mono text-sm"
+                                                />
+                                                {getStatusIndicator(keyTestStatus[index] || 'idle')}
+                                                <button onClick={() => handleTestKey(index, key)} className="btn-secondary text-sm" disabled={keyTestStatus[index] === 'testing'}>
+                                                    {keyTestStatus[index] === 'testing' ? '...' : 'Тест'}
+                                                </button>
+                                                <button onClick={() => handleRemoveKey(index)} className="btn-danger text-sm">
+                                                    Удалить
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={handleAddKey} className="btn-secondary flex items-center gap-2">
+                                        <PlusCircleIcon className="w-5 h-5"/>
+                                        Добавить ключ
+                                    </button>
                                 </div>
-                                <button onClick={handleAddKey} className="btn-secondary flex items-center gap-2">
-                                    <PlusCircleIcon className="w-5 h-5"/>
-                                    Добавить ключ
-                                </button>
                             </div>
                         )}
                         {activeTab === 'platforms' && (

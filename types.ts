@@ -3,6 +3,7 @@ export interface Platform {
     name: string;
     url: string;
     enabled: boolean;
+    type: 'scrape' | 'api';
 }
 
 export interface SearchSettings {
