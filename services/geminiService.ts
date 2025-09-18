@@ -76,6 +76,15 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
                         requirements: { type: Type.ARRAY, items: { type: Type.STRING } },
                         matchAnalysis: { type: Type.STRING },
                         url: { type: Type.STRING },
+                        contacts: {
+                            type: Type.OBJECT,
+                            properties: {
+                                email: { type: Type.STRING },
+                                phone: { type: Type.STRING },
+                                telegram: { type: Type.STRING },
+                            },
+                             nullable: true,
+                        },
                     },
                     required: ["title", "company", "salary", "location", "description", "matchAnalysis", "url"]
                 }
@@ -99,7 +108,7 @@ export const adaptResume = async (promptTemplate: string, resume: string, job: J
     return response.text;
 };
 
-export const generateCoverLetter = async (promptTemplate: string, job: Job, candidateName: string): Promise<string> => {
+export const generateCoverLetter = async (promptTemplate: string, job: Job, candidateName: string): Promise<{ subject: string; body: string }> => {
     const ai = getAiClient();
     const prompt = promptTemplate
       .replace('{jobTitle}', job.title)
@@ -107,7 +116,22 @@ export const generateCoverLetter = async (promptTemplate: string, job: Job, cand
 
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `${prompt}\n\n## Описание вакансии:\n${job.description}`
+        contents: `${prompt}\n\n## Описание вакансии:\n${job.description}`,
+        config: { responseMimeType: "application/json" }
+    });
+    return parseJsonResponse<{ subject: string; body: string }>(response.text, 'сопроводительного письма');
+};
+
+export const generateShortMessage = async (promptTemplate: string, job: Job, candidateName: string): Promise<string> => {
+    const ai = getAiClient();
+    const prompt = promptTemplate
+      .replace('{jobTitle}', job.title)
+      .replace('{jobCompany}', job.company)
+      .replace('{candidateName}', candidateName);
+
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
     });
     return response.text;
 };

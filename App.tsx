@@ -24,7 +24,8 @@ import {
     adaptResume,
     generateCoverLetter,
     getInterviewQuestions,
-    analyzeHrResponse
+    analyzeHrResponse,
+    generateShortMessage
 } from './services/geminiService';
 import { auth, firebaseConfig } from './services/firebase';
 import {
@@ -219,7 +220,10 @@ function App() {
         if (!activeProfile) return;
         runAiAction(
             `Сопроводительное письмо для "${job.company}"`,
-            () => generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name)
+            async () => {
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+                return `Subject: ${subject}\n\n${body}`;
+            }
         );
     };
 
@@ -246,6 +250,50 @@ function App() {
             setMessage(error instanceof Error ? error.message : 'Произошла ошибка.');
         }
     };
+    
+    const handleQuickApply = async (action: 'email' | 'whatsapp' | 'telegram', job: Job) => {
+        if (!activeProfile) return;
+
+        setStatus(AppStatus.Loading);
+        
+        try {
+            let url: string;
+            if (action === 'email') {
+                setMessage('ИИ готовит текст для email...');
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+                url = `mailto:${job.contacts?.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            } else {
+                setMessage('ИИ готовит сообщение для мессенджера...');
+                const message = await generateShortMessage(activeProfile.prompts.shortMessage, job, activeProfile.name);
+                if (action === 'whatsapp') {
+                    const phone = job.contacts?.phone?.replace(/\D/g, ''); // Clean phone number
+                    url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                } else { // telegram
+                    const contact = job.contacts?.telegram?.replace('@', ''); // Clean username
+                    url = `tg://msg?to=${contact}&text=${encodeURIComponent(message)}`;
+                }
+            }
+            
+            window.open(url, '_blank');
+            setStatus(AppStatus.Success);
+            setMessage(`Открыт клиент для отправки сообщения. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+            // Automatically move the card to 'tracking' after a successful quick apply
+            if (job.kanbanStatus === 'new') {
+                handleUpdateJobStatus(job.id, 'tracking');
+            }
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
+            setStatus(AppStatus.Error);
+            setMessage(`Ошибка при генерации сообщения: ${errorMessage}`);
+            // Rethrow to allow modal to stop loading indicator
+            throw error;
+        }
+    };
+
+    const handleQuickApplyEmail = (job: Job) => handleQuickApply('email', job);
+    const handleQuickApplyWhatsapp = (job: Job) => handleQuickApply('whatsapp', job);
+    const handleQuickApplyTelegram = (job: Job) => handleQuickApply('telegram', job);
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -265,6 +313,9 @@ function App() {
                     onGenerateEmail={handleGenerateEmail}
                     onPrepareForInterview={handlePrepareForInterview}
                     onAnalyzeResponse={(job) => setModal({ type: 'hrAnalysis', job })}
+                    onQuickApplyEmail={handleQuickApplyEmail}
+                    onQuickApplyWhatsapp={handleQuickApplyWhatsapp}
+                    onQuickApplyTelegram={handleQuickApplyTelegram}
                 />;
             case 'aiContent':
                 return <Modal

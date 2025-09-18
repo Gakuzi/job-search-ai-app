@@ -7,6 +7,10 @@ import { ClipboardIcon } from './icons/ClipboardIcon';
 import { SendIcon } from './icons/SendIcon';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
+import { MailIcon } from './icons/MailIcon';
+import { WhatsappIcon } from './icons/WhatsappIcon';
+import { TelegramIcon } from './icons/TelegramIcon';
+
 
 interface JobDetailModalProps {
     job: Job;
@@ -16,6 +20,9 @@ interface JobDetailModalProps {
     onGenerateEmail: (job: Job) => void;
     onPrepareForInterview: (job: Job) => void;
     onAnalyzeResponse: (job: Job) => void;
+    onQuickApplyEmail: (job: Job) => Promise<void>;
+    onQuickApplyWhatsapp: (job: Job) => Promise<void>;
+    onQuickApplyTelegram: (job: Job) => Promise<void>;
 }
 
 const JobDetailModal: React.FC<JobDetailModalProps> = ({ 
@@ -26,15 +33,30 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
     onGenerateEmail,
     onPrepareForInterview,
     onAnalyzeResponse,
+    onQuickApplyEmail,
+    onQuickApplyWhatsapp,
+    onQuickApplyTelegram,
 }) => {
     const [notes, setNotes] = useState(job.notes || '');
     const debouncedNotes = useDebounce(notes, 500);
+    const [quickApplyLoading, setQuickApplyLoading] = useState<'email' | 'whatsapp' | 'telegram' | null>(null);
 
     useEffect(() => {
         if (debouncedNotes !== (job.notes || '')) {
             onUpdateJob(job.id, { notes: debouncedNotes });
         }
     }, [debouncedNotes, job.id, job.notes, onUpdateJob]);
+    
+     const handleQuickApply = async (type: 'email' | 'whatsapp' | 'telegram') => {
+        setQuickApplyLoading(type);
+        try {
+            if (type === 'email') await onQuickApplyEmail(job);
+            if (type === 'whatsapp') await onQuickApplyWhatsapp(job);
+            if (type === 'telegram') await onQuickApplyTelegram(job);
+        } finally {
+            setQuickApplyLoading(null);
+        }
+    }
     
     return (
         <div 
@@ -99,6 +121,22 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                                 </button>
                             </div>
                         </div>
+                        
+                         <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                            <h3 className="text-lg font-semibold mb-3">Быстрый отклик</h3>
+                            <div className="space-y-2">
+                                <button onClick={() => handleQuickApply('email')} disabled={!job.contacts?.email || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {quickApplyLoading === 'email' ? 'Генерация...' : <><MailIcon className="w-5 h-5" /> Email</>}
+                                </button>
+                                <button onClick={() => handleQuickApply('whatsapp')} disabled={!job.contacts?.phone || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {quickApplyLoading === 'whatsapp' ? 'Генерация...' : <><WhatsappIcon className="w-5 h-5" /> WhatsApp</>}
+                                </button>
+                                <button onClick={() => handleQuickApply('telegram')} disabled={!job.contacts?.telegram || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {quickApplyLoading === 'telegram' ? 'Генерация...' : <><TelegramIcon className="w-5 h-5" /> Telegram</>}
+                                </button>
+                            </div>
+                        </div>
+                        
                          <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
                             <h3 className="text-lg font-semibold mb-2">Заметки</h3>
                              <textarea 
@@ -125,9 +163,10 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 .animate-scale-in {
                     animation: scale-in 0.2s ease-out forwards;
                 }
-                .btn-tool {
+                .btn-tool, .btn-tool-contact {
                     display: flex;
                     align-items: center;
+                    justify-content: center;
                     gap: 0.5rem;
                     padding: 0.5rem 0.75rem;
                     font-size: 0.875rem;
@@ -135,18 +174,21 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                     background-color: #fff;
                     border: 1px solid #cbd5e1;
                     border-radius: 0.375rem;
-                    transition: background-color 0.2s;
+                    transition: all 0.2s;
+                    cursor: pointer;
                 }
-                .dark .btn-tool {
+                .dark .btn-tool, .dark .btn-tool-contact {
                     background-color: #475569;
                     border-color: #64748b;
                     color: #e2e8f0;
                 }
-                .btn-tool:hover {
+                .btn-tool:hover, .btn-tool-contact:hover:not(:disabled) {
                     background-color: #f1f5f9;
+                    border-color: #94a3b8;
                 }
-                .dark .btn-tool:hover {
+                .dark .btn-tool:hover, .dark .btn-tool-contact:hover:not(:disabled) {
                     background-color: #64748b;
+                    border-color: #94a3b8;
                 }
             `}</style>
         </div>

@@ -13,6 +13,7 @@ import {
 import { db } from './firebase';
 import type { Profile, Job, SearchSettings, Prompts } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_PROMPTS } from '../constants';
 
 
 // --- Profiles ---
@@ -48,10 +49,11 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                     limit: settings.limit || 0,
                 },
                 prompts: {
-                    jobSearch: prompts.jobSearch || '',
-                    resumeAdapt: prompts.resumeAdapt || '',
-                    coverLetter: prompts.coverLetter || '',
-                    hrResponseAnalysis: prompts.hrResponseAnalysis || '',
+                    jobSearch: prompts.jobSearch || DEFAULT_PROMPTS.jobSearch,
+                    resumeAdapt: prompts.resumeAdapt || DEFAULT_PROMPTS.resumeAdapt,
+                    coverLetter: prompts.coverLetter || DEFAULT_PROMPTS.coverLetter,
+                    hrResponseAnalysis: prompts.hrResponseAnalysis || DEFAULT_PROMPTS.hrResponseAnalysis,
+                    shortMessage: prompts.shortMessage || DEFAULT_PROMPTS.shortMessage,
                 },
             };
             return cleanProfile;
