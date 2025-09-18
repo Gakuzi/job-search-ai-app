@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings, KanbanStatus } from '../types';
+import type { Job, SearchSettings, KanbanStatus, GmailMessage } from '../types';
 
 const getAiClient = () => {
     // FIX: Initializing the Gemini client using the API key from environment variables,
@@ -126,7 +126,7 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
       .replace('{candidateName}', candidateName);
 
     const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gem-ini-2.5-flash",
         contents: prompt
     });
     return response.text;
@@ -244,4 +244,20 @@ export const analyzeHrResponse = async (promptTemplate: string, emailText: strin
     // Fallback or error
     console.warn(`AI returned an unexpected status: '${result}'. Defaulting to 'tracking'.`);
     return 'tracking';
+};
+
+export const matchEmailToJob = async (promptTemplate: string, email: GmailMessage, jobs: Job[]): Promise<string | null> => {
+    const ai = getAiClient();
+    const emailText = `От: ${email.from}\nТема: ${email.subject}\n\n${email.body}`;
+    const jobsJson = JSON.stringify(jobs.map(j => ({ id: j.id, title: j.title, company: j.company })));
+    
+    const prompt = `${promptTemplate}\n\n# ПИСЬМО ДЛЯ АНАЛИЗА:\n${emailText}\n\n# СПИСОК ВАКАНСИЙ:\n${jobsJson}`;
+
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+    });
+
+    const result = response.text.trim();
+    return result === 'NO_MATCH' ? null : result;
 };

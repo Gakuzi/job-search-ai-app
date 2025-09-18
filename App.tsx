@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './services/firebase';
+import { signInWithGoogleForGmail } from './services/googleAuthService';
+import { fetchRecruiterReplies } from './services/gmailService';
 import { useTheme } from './hooks/useTheme';
 import {
     subscribeToProfiles,
@@ -18,9 +20,10 @@ import {
     getInterviewQuestions,
     analyzeHrResponse,
     generateShortMessage,
+    matchEmailToJob,
 } from './services/geminiService';
 import type { Job, Profile, SearchSettings, KanbanStatus } from './types';
-import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
+import { AppStatus, DEFAULT_PROMPTS } from './constants';
 
 import AuthGuard from './components/AuthGuard';
 import Header from './components/Header';
@@ -33,6 +36,8 @@ import JobDetailModal from './components/JobDetailModal';
 import OnboardingModal from './components/OnboardingModal';
 import HrAnalysisModal from './components/HrAnalysisModal';
 import ConfigurationError from './components/ConfigurationError';
+import ReplyScannerModal from './components/ReplyScannerModal';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 const App: React.FC = () => {
     // UI State
@@ -44,6 +49,9 @@ const App: React.FC = () => {
     // Auth State
     const [user, setUser] = useState<User | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
+    const [googleAccessToken, setGoogleAccessToken] = useLocalStorage<string | null>('googleAccessToken', null);
+    const [isGoogleAuthLoading, setIsGoogleAuthLoading] = useState(false);
+    const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
 
     // Data State
     const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -56,6 +64,13 @@ const App: React.FC = () => {
     const [isModalLoading, setIsModalLoading] = useState(false);
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
     const [jobForHrAnalysis, setJobForHrAnalysis] = useState<Job | null>(null);
+    const [scannerModalState, setScannerModalState] = useState<{
+        isOpen: boolean;
+        status: 'scanning' | 'analyzing' | 'complete';
+        foundCount: number;
+        updatedCount: number;
+    } | null>(null);
+
 
     // Derived State
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
@@ -74,9 +89,13 @@ const App: React.FC = () => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setUser(user);
             setAuthLoading(false);
+            if (!user) {
+                // Clear google token if firebase user logs out
+                setGoogleAccessToken(null);
+            }
         });
         return () => unsubscribe();
-    }, []);
+    }, [setGoogleAccessToken]);
 
     useEffect(() => {
         if (user) {
@@ -110,35 +129,73 @@ const App: React.FC = () => {
             await signOut(auth);
             setUser(null);
             setActiveProfileId(null);
+            setGoogleAccessToken(null);
         } catch (error) {
             console.error("Error signing out: ", error);
             updateStatus(AppStatus.Error, 'Не удалось выйти из аккаунта.');
         }
     };
     
-    const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-        const [storedValue, setStoredValue] = useState<T>(() => {
-             if (typeof window === 'undefined') return initialValue;
-            try {
-                const item = window.localStorage.getItem(key);
-                return item ? JSON.parse(item) : initialValue;
-            } catch (error) {
-                console.error(error);
-                return initialValue;
+    // --- Google Auth & Scan Handlers ---
+    const handleGoogleConnect = async () => {
+        setIsGoogleAuthLoading(true);
+        setGoogleAuthError(null);
+        try {
+            const { accessToken } = await signInWithGoogleForGmail();
+            if (accessToken) {
+                setGoogleAccessToken(accessToken);
+                updateStatus(AppStatus.Success, 'Gmail успешно подключен. Теперь вы можете сканировать почту.');
+            } else {
+                throw new Error("Access token not received.");
             }
-        });
+        } catch (error) {
+            console.error("Google connect error:", error);
+            setGoogleAuthError('Не удалось подключиться к Google. Убедитесь, что всплывающие окна разрешены.');
+            updateStatus(AppStatus.Error, 'Ошибка подключения к Gmail.');
+        } finally {
+            setIsGoogleAuthLoading(false);
+        }
+    };
 
-        const setValue: React.Dispatch<React.SetStateAction<T>> = useCallback((value) => {
-            try {
-                const valueToStore = value instanceof Function ? value(storedValue) : value;
-                setStoredValue(valueToStore);
-                if(typeof window !== "undefined") window.localStorage.setItem(key, JSON.stringify(valueToStore));
-            } catch (error) {
-                console.error(error);
+    const handleGoogleDisconnect = () => {
+        setGoogleAccessToken(null);
+        updateStatus(AppStatus.Idle, 'Вы отключились от Gmail.');
+    };
+
+    const handleScanReplies = async () => {
+        if (!googleAccessToken || !activeProfile) {
+            updateStatus(AppStatus.Error, 'Сначала подключите Gmail в настройках и выберите профиль.');
+            return;
+        }
+        setScannerModalState({ isOpen: true, status: 'scanning', foundCount: 0, updatedCount: 0 });
+        try {
+            const replies = await fetchRecruiterReplies(googleAccessToken);
+            setScannerModalState(s => ({ ...s!, status: 'analyzing', foundCount: replies.length }));
+            
+            let updatedCount = 0;
+            for (const email of replies) {
+                const matchedJobId = await matchEmailToJob(activeProfile.prompts.emailJobMatch, email, trackedJobs);
+                
+                if (matchedJobId && matchedJobId !== 'NO_MATCH') {
+                    const emailBodyForAnalysis = `Тема: ${email.subject}\nОт: ${email.from}\n\n${email.body}`;
+                    const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailBodyForAnalysis);
+                    await handleUpdateJobStatus(matchedJobId, newStatus);
+                    updatedCount++;
+                }
             }
-        }, [key, storedValue]);
 
-        return [storedValue, setValue];
+            setScannerModalState(s => ({ ...s!, status: 'complete', updatedCount }));
+        } catch (error) {
+            console.error("Error scanning replies:", error);
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            if (errorMessage.includes('401') || errorMessage.includes('403')) {
+                handleGoogleDisconnect();
+                updateStatus(AppStatus.Error, 'Сессия Google истекла. Пожалуйста, подключитесь снова.');
+            } else {
+                updateStatus(AppStatus.Error, 'Произошла ошибка при сканировании почты.');
+            }
+            setScannerModalState(null);
+        }
     };
 
     // --- Core Logic Handlers ---
@@ -350,6 +407,12 @@ const App: React.FC = () => {
                                     onProfileUpdate={handleUpdateProfile}
                                     onSearch={handleSearch}
                                     status={status}
+                                    user={user}
+                                    googleAccessToken={googleAccessToken}
+                                    onGoogleConnect={handleGoogleConnect}
+                                    onGoogleDisconnect={handleGoogleDisconnect}
+                                    isGoogleAuthLoading={isGoogleAuthLoading}
+                                    googleAuthError={googleAuthError}
                                 />
                                  <div className="mt-4">
                                      <StatusBar status={status} message={message} />
@@ -375,6 +438,8 @@ const App: React.FC = () => {
                             onViewDetails={handleViewDetails}
                             onAdaptResume={handleAdaptResume}
                             onGenerateEmail={handleGenerateEmail}
+                            onScanReplies={handleScanReplies}
+                            isGmailConnected={!!googleAccessToken}
                         />
                     )}
                 </main>
@@ -401,6 +466,15 @@ const App: React.FC = () => {
                         job={jobForHrAnalysis}
                         onClose={() => setJobForHrAnalysis(null)}
                         onAnalyze={handlePerformHrAnalysis}
+                    />
+                )}
+
+                {scannerModalState?.isOpen && (
+                    <ReplyScannerModal
+                        onClose={() => setScannerModalState(null)}
+                        scanStatus={scannerModalState.status}
+                        foundEmailsCount={scannerModalState.foundCount}
+                        updatedJobsCount={scannerModalState.updatedCount}
                     />
                 )}
             </div>

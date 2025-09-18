@@ -54,6 +54,7 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                     coverLetter: prompts.coverLetter || DEFAULT_PROMPTS.coverLetter,
                     hrResponseAnalysis: prompts.hrResponseAnalysis || DEFAULT_PROMPTS.hrResponseAnalysis,
                     shortMessage: prompts.shortMessage || DEFAULT_PROMPTS.shortMessage,
+                    emailJobMatch: prompts.emailJobMatch || DEFAULT_PROMPTS.emailJobMatch,
                 },
             };
             return cleanProfile;

@@ -28,6 +28,7 @@ export interface Prompts {
     coverLetter: string;
     hrResponseAnalysis: string;
     shortMessage: string;
+    emailJobMatch: string;
 }
 
 export interface Job {
@@ -61,4 +62,15 @@ export interface Profile {
     resume: string;
     settings: SearchSettings;
     prompts: Prompts;
+}
+
+/**
+ * Represents a simplified structure for a Gmail message.
+ */
+export interface GmailMessage {
+    id: string;
+    snippet: string;
+    from: string;
+    subject: string;
+    body: string; // The full body of the email
 }
