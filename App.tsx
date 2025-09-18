@@ -416,7 +416,9 @@ const MainApplication: React.FC = () => {
 }
 
 const App: React.FC = () => {
-    if (!isFirebaseConfigured || !isGoogleConfigured) {
+    // Firebase is essential for the app to run (auth, database).
+    // The Google Client ID is optional for startup and only required for Gmail features.
+    if (!isFirebaseConfigured) {
         return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
     
