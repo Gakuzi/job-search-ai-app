@@ -1,6 +1,5 @@
-// FIX: Moved triple-slash directives to the top of the file for proper type resolution.
-/// <reference types="gapi" />
-/// <reference types="gapi.client" />
+// FIX: Remove reference types that cause errors when @types are not installed.
+// The global declaration below is sufficient for type checking.
 
 // FIX: Add global declaration for gapi to resolve type errors when @types are not available.
 declare const gapi: any;

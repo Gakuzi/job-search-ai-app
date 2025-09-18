@@ -23,6 +23,8 @@ interface JobDetailModalProps {
     onQuickApplyEmail: (job: Job) => Promise<void>;
     onQuickApplyWhatsapp: (job: Job) => Promise<void>;
     onQuickApplyTelegram: (job: Job) => Promise<void>;
+    isGoogleConnected: boolean;
+    isGapiReady: boolean;
 }
 
 const JobDetailModal: React.FC<JobDetailModalProps> = ({ 
@@ -36,6 +38,8 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
     onQuickApplyEmail,
     onQuickApplyWhatsapp,
     onQuickApplyTelegram,
+    isGoogleConnected,
+    isGapiReady,
 }) => {
     const [notes, setNotes] = useState(job.notes || '');
     const debouncedNotes = useDebounce(notes, 500);
@@ -125,7 +129,12 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                          <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
                             <h3 className="text-lg font-semibold mb-3">Быстрый отклик</h3>
                             <div className="space-y-2">
-                                <button onClick={() => handleQuickApply('email')} disabled={!job.contacts?.email || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
+                                <button 
+                                    onClick={() => handleQuickApply('email')} 
+                                    disabled={!job.contacts?.email || !!quickApplyLoading || !isGoogleConnected || !isGapiReady} 
+                                    className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={!isGoogleConnected ? "Подключите Gmail в настройках" : !isGapiReady ? "API Google еще инициализируется..." : !job.contacts?.email ? "Email не указан в вакансии" : "Отправить через Gmail"}
+                                >
                                     {quickApplyLoading === 'email' ? 'Генерация...' : <><MailIcon className="w-5 h-5" /> Email</>}
                                 </button>
                                 <button onClick={() => handleQuickApply('whatsapp')} disabled={!job.contacts?.phone || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">

@@ -1,14 +1,11 @@
-// FIX: Moved triple-slash directives to the top of the file for proper type resolution.
-/// <reference types="gapi" />
-/// <reference types="gapi.client" />
-/// <reference types="google.accounts" />
+// FIX: Remove reference types that cause errors when @types are not installed.
+// The global declarations below are sufficient for type checking.
 
 // FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
 declare const gapi: any;
 declare const google: any;
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -31,7 +28,9 @@ export const gapiLoad = (libs: string): Promise<void> => {
 
 export const initGapiClient = (): Promise<void> => {
     return gapi.client.init({
-        apiKey: GEMINI_API_KEY,
+        // The Gmail API uses OAuth 2.0 for authorization and does not require an API key
+        // for this client initialization. Providing an unrelated key (like for Gemini)
+        // could cause the GAPI client to initialize but fail to load the Gmail API surface correctly.
         discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest'],
     });
 };

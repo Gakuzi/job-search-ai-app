@@ -11,10 +11,11 @@ interface ApplicationTrackerProps {
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
     isGoogleConnected: boolean;
+    isGapiReady: boolean;
     onScanReplies: () => void;
 }
 
-const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail, isGoogleConnected, onScanReplies }) => {
+const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJobStatus, onViewDetails, onAdaptResume, onGenerateEmail, isGoogleConnected, isGapiReady, onScanReplies }) => {
     if (jobs.length === 0) {
         return (
             <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
@@ -31,9 +32,9 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJ
             <div className="mb-4 flex justify-end">
                 <button
                     onClick={onScanReplies}
-                    disabled={!isGoogleConnected}
+                    disabled={!isGoogleConnected || !isGapiReady}
                     className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={!isGoogleConnected ? "Подключите Gmail в Настройках -> Интеграции" : "Проверить почту на наличие ответов"}
+                    title={!isGoogleConnected ? "Подключите Gmail в Настройках -> Интеграции" : !isGapiReady ? "API Google еще инициализируется..." : "Проверить почту на наличие ответов"}
                 >
                     <GoogleIcon className="w-5 h-5"/>
                     Сканировать Gmail

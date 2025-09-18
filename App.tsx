@@ -1,6 +1,5 @@
-/// <reference types="gapi" />
-/// <reference types="gapi.client" />
-/// <reference types="google.accounts" />
+// FIX: Remove reference types that cause errors when @types are not installed.
+// The global declarations below are sufficient for type checking.
 
 // FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
 declare const gapi: any;
@@ -533,6 +532,8 @@ function App() {
                     onQuickApplyEmail={(job) => handleQuickApply('email', job)}
                     onQuickApplyWhatsapp={(job) => handleQuickApply('whatsapp', job)}
                     onQuickApplyTelegram={(job) => handleQuickApply('telegram', job)}
+                    isGoogleConnected={isGoogleConnected}
+                    isGapiReady={isGapiReady}
                 />;
             case 'aiContent':
                 return <Modal
@@ -619,6 +620,7 @@ function App() {
                                 onAdaptResume={handleAdaptResume}
                                 onGenerateEmail={handleGenerateEmail}
                                 isGoogleConnected={isGoogleConnected}
+                                isGapiReady={isGapiReady}
                                 onScanReplies={handleOpenGmailScanner}
                             />
                         )
