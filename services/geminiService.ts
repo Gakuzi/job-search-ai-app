@@ -24,87 +24,6 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
     }
 };
 
-export const analyzeResumeAndAskQuestions = async (text: string): Promise<string> => {
-    const ai = getAiClient();
-    const prompt = `
-# ЗАДАЧА: АНАЛИЗ РЕЗЮМЕ И УТОЧНЯЮЩИЕ ВОПРОСЫ
-Ты — AI-ассистент для настройки профиля поиска работы. Тебе предоставили текст от пользователя.
-Твоя задача — проанализировать его и решить, достаточно ли информации для создания профиля.
-
-# ИНСТРУКЦИИ:
-1.  **Проверь наличие ключевой информации:**
-    *   Имя и Фамилия.
-    *   Контактная информация (хотя бы email или телефон).
-    *   Опыт работы или образование.
-    *   Желаемая должность.
-    *   Желаемая зарплата.
-    *   Город для поиска.
-2.  **Прими решение:**
-    *   **ЕСЛИ** вся ключевая информация присутствует, верни **ТОЛЬКО** слово \`READY\`.
-    *   **ЕСЛИ** какой-то информации не хватает, сформулируй 1-2 вежливых, коротких вопроса, чтобы уточнить недостающие данные. Например: "Спасибо! Отличное резюме. Подскажите, пожалуйста, на какую зарплату вы рассчитываете и в каком городе ищете работу?".
-3.  **ВАЖНО:** Не задавай больше 2-х вопросов за раз. Не придумывай информацию. Ответ должен быть либо \`READY\`, либо уточняющие вопросы.
-
-# ТЕКСТ ОТ ПОЛЬЗОВАТЕЛЯ:
-${text}
-`;
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt
-    });
-    return response.text;
-};
-
-
-export const generateProfileFromChat = async (chatHistory: string): Promise<{ resume: string, settings: SearchSettings, profileName: string }> => {
-    const ai = getAiClient();
-    const prompt = `
-# ЗАДАЧА: АНАЛИЗ ДИАЛОГА И СОЗДАНИЕ ПРОФИЛЯ
-Ты — AI HR-ассистент. Проанализируй весь диалог с кандидатом и создай на его основе полный профиль для поиска работы.
-
-# ИНСТРУКЦИИ:
-1.  **Синтезируй Резюме:** Собери всю информацию (опыт, навыки, образование) в единый, хорошо структурированный текст резюме в формате Markdown.
-2.  **Извлеки Параметры Поиска (SearchSettings):**
-    *   **positions:** Ключевые должности (e.g., "Frontend Developer, React Engineer").
-    *   **salary:** Желаемая зарплата (число).
-    *   **currency:** Валюта ('RUB', 'USD', 'EUR').
-    *   **location:** Город для поиска.
-3.  **Извлеки Имя и Фамилию:** Найди в тексте имя и фамилию кандидата.
-4.  **Сгенерируй Название Профиля:** Создай название по формату: "[Имя Фамилия] - [Первая должность], от [Зарплата] [Валюта]".
-5.  **Верни JSON:** Сформируй и верни СТРОГО один JSON-объект, без markdown-оберток.
-
-# ДИАЛОГ ДЛЯ АНАЛИЗА:
-${chatHistory}
-`;
-
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: { 
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    resume: { type: Type.STRING },
-                    settings: {
-                        type: Type.OBJECT,
-                        properties: {
-                            positions: { type: Type.STRING },
-                            salary: { type: Type.NUMBER },
-                            currency: { type: Type.STRING },
-                            location: { type: Type.STRING },
-                        },
-                        required: ["positions", "salary", "currency", "location"],
-                    },
-                    profileName: { type: Type.STRING }
-                },
-                required: ["resume", "settings", "profileName"]
-            }
-        }
-    });
-
-    return parseJsonResponse<{ resume: string, settings: SearchSettings, profileName: string }>(response.text, 'создания профиля');
-};
-
 export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings, platform: Platform): Promise<Omit<Job, 'id' | 'kanbanStatus' | 'profileId' | 'userId'>[]> => {
     const ai = getAiClient();
     
@@ -216,6 +135,7 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
     return response.text;
 };
 
+
 export const getInterviewQuestions = async (job: Job, resume: string): Promise<string> => {
     const ai = getAiClient();
     const prompt = `
@@ -239,32 +159,121 @@ ${resume}
     return response.text;
 };
 
+export const analyzeResumeAndAskQuestions = async (resumeText: string): Promise<string> => {
+    const ai = getAiClient();
+    const prompt = `
+Действуй как дружелюбный AI-ассистент по карьере. Твоя задача - проанализировать текст резюме и определить, достаточно ли в нем информации для качественного поиска работы.
+Ключевая информация, которая тебе нужна:
+1.  **Желаемые должности** (например, "руководитель проекта", "CEO").
+2.  **Желаемая минимальная зарплата** (в рублях или другой валюте).
+3.  **Предпочитаемая локация** (город или "удаленно").
+
+Проанализируй текст ниже.
+-   Если ВСЯ ключевая информация присутствует, ответь ОДНИМ СЛОВОМ: **READY**.
+-   Если чего-то не хватает, задай ОДИН вежливый и короткий уточняющий вопрос, чтобы получить недостающую информацию. Спрашивай только о том, чего действительно нет. Например: "Спасибо! Резюме выглядит отлично. Уточните, пожалуйста, на какую минимальную зарплату вы рассчитываете?" или "Спасибо за резюме! Какие должности и в каком городе вы рассматриваете в первую очередь?".
+
+Текст резюме для анализа:
+---
+${resumeText}
+---
+`;
+    const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
+    return response.text;
+};
+
+export const generateProfileFromChat = async (chatHistory: string): Promise<{ resume: string, settings: SearchSettings }> => {
+    const ai = getAiClient();
+    const prompt = `
+Основываясь на всей истории диалога с пользователем (включая изначальный текст резюме и последующие ответы), создай его полный карьерный профиль.
+Результат должен быть строго в формате JSON-объекта с двумя ключами: "resume" и "settings".
+
+1.  **resume**: Создай отполированное и хорошо структурированное резюме в формате Markdown на основе всей предоставленной информации.
+2.  **settings**: Создай объект с настройками поиска. Он должен включать поля:
+    *   \`positions\` (string): Желаемые должности через запятую.
+    *   \`salary\` (number): Минимальная желаемая зарплата.
+    *   \`currency\` (string): 'RUB', 'USD', или 'EUR', определи из контекста. По умолчанию 'RUB'.
+    *   \`location\` (string): Город или "Удаленно".
+    *   \`remote\` (boolean): true, если пользователь ищет удаленную работу.
+    *   \`employment\` (array of strings): ["полная занятость", "проектная работа"].
+    *   \`schedule\` (array of strings): ["полный день", "гибкий график"].
+    *   \`skills\` (string): Ключевые навыки и технологии из резюме через запятую.
+    *   \`keywords\` (string): Пустая строка.
+    *   \`minCompanyRating\` (number): 3.5.
+    *   \`limit\` (number): 7.
+
+История диалога:
+---
+${chatHistory}
+---
+
+Верни только JSON-объект и ничего больше.
+`;
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+    });
+    
+    const parsedResult = parseJsonResponse<{ resume: string, settings: SearchSettings }>(response.text, 'создания профиля');
+
+    if (!parsedResult || !parsedResult.resume || !parsedResult.settings || !parsedResult.settings.positions) {
+        console.error("Incomplete profile data from AI:", parsedResult);
+        throw new Error('ИИ вернул неполные данные для создания профиля. Убедитесь, что в диалоге была предоставлена вся информация (должность, зарплата, локация).');
+    }
+
+    return {
+        resume: parsedResult.resume,
+        settings: parsedResult.settings,
+    };
+};
+
+export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
+    const ai = getAiClient();
+    const prompt = `${promptTemplate}\n${emailText}`;
+    
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+    });
+    
+    const result = response.text.trim().toLowerCase();
+    
+    if (['new', 'tracking', 'interview', 'offer', 'archive'].includes(result)) {
+        return result as KanbanStatus;
+    }
+    
+    console.warn(`AI returned an unexpected status: '${result}'. Defaulting to 'tracking'.`);
+    return 'tracking';
+};
+
 export const matchEmailToJob = async (emailText: string, jobs: Job[]): Promise<string> => {
     const ai = getAiClient();
-    const prompt = `${DEFAULT_PROMPTS.emailJobMatch}\n\n## Текст письма:\n${emailText}\n\n## Список вакансий:\n${JSON.stringify(jobs.map(j => ({id: j.id, title: j.title, company: j.company})))}`;
+    const simplifiedJobs = jobs.map(({ id, title, company }) => ({ id, title, company }));
+    const prompt = `
+# ЗАДАЧА: СОПОСТАВЛЕНИЕ EMAIL С ВАКАНСИЕЙ
+Проанализируй текст письма и сравни его с предоставленным списком вакансий.
+Верни ТОЛЬКО ID наиболее подходящей вакансии. Если не уверен, верни "UNKNOWN".
+
+## Текст письма:
+${emailText}
+
+## Список вакансий:
+${JSON.stringify(simplifiedJobs, null, 2)}
+`;
 
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: prompt
     });
 
-    return response.text.trim();
-};
-
-export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
-    const ai = getAiClient();
-    const prompt = `${promptTemplate}\n\n${emailText}`;
-
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-    });
+    const result = response.text.trim();
     
-    const result = response.text.trim().toLowerCase();
-    
-    if (['interview', 'offer', 'archive', 'tracking'].includes(result)) {
-        return result as KanbanStatus;
+    // Check if the result is a valid UUID or one of the job IDs
+    const isValidId = jobs.some(job => job.id === result);
+    if (isValidId) {
+        return result;
     }
-    
-    return 'tracking'; // Default fallback
+
+    console.warn(`AI returned an unknown job ID: '${result}'.`);
+    return "UNKNOWN";
 };

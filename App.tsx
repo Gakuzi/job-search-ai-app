@@ -1,468 +1,722 @@
+// FIX: Remove reference types that cause errors when @types are not installed.
+// The global declarations below are sufficient for type checking.
+
+// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
+declare const gapi: any;
+declare const google: any;
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 
-// Types and Constants
-import type { Profile, Job, SearchSettings, KanbanStatus, GoogleUser, Email } from './types';
-import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
-
-// Hooks
-import { useTheme } from './hooks/useTheme';
-
-// Services
-import { auth, firebaseConfig } from './services/firebase';
-import * as firestoreService from './services/firestoreService';
-import * as geminiService from './services/geminiService';
-import * as googleAuthService from './services/googleAuthService';
-import * as gmailService from './services/gmailService';
-
-// Components
 import Header from './components/Header';
-import SettingsModal from './components/SettingsModal';
-import StatusBar from './components/StatusBar';
 import JobList from './components/JobList';
 import ApplicationTracker from './components/ApplicationTracker';
-import JobDetailModal from './components/JobDetailModal';
+import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
 import OnboardingModal from './components/OnboardingModal';
+import JobDetailModal from './components/JobDetailModal';
+import HrAnalysisModal from './components/HrAnalysisModal';
+import GmailScannerModal from './components/GmailScannerModal';
 import AuthGuard from './components/AuthGuard';
 import ConfigurationError from './components/ConfigurationError';
-import GmailScannerModal from './components/GmailScannerModal';
+import SettingsModal from './components/SettingsModal';
+import { SparklesIcon } from './components/icons/SparklesIcon';
 
-type AppView = 'search' | 'tracker';
-type ModalContent = { type: 'resume', job: Job } | { type: 'cover-letter', job: Job } | { type: 'questions', job: Job } | { type: 'hr-analysis', job: Job };
 
-const isFirebaseConfigured = () => {
-  return firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
-};
+import { useTheme } from './hooks/useTheme';
+import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
+// FIX: Import kanbanStatusMap to resolve reference error.
+import { kanbanStatusMap } from './types';
+import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email, Interaction } from './types';
 
-const isGoogleApiConfigured = () => {
-    return import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GEMINI_API_KEY;
-};
+import {
+    findJobsOnRealWebsite,
+    adaptResume,
+    generateCoverLetter,
+    getInterviewQuestions,
+    analyzeHrResponse,
+    generateShortMessage,
+    matchEmailToJob,
+} from './services/geminiService';
+import { auth, firebaseConfig } from './services/firebase';
+import {
+    subscribeToProfiles,
+    addProfile,
+    updateProfile,
+    deleteProfile,
+    subscribeToJobs,
+    addJobsBatch,
+    updateJob,
+} from './services/firestoreService';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
+import { sendEmail, listMessages } from './services/gmailService';
+
+
+type View = 'search' | 'applications';
+type ModalState =
+    | { type: 'none' }
+    | { type: 'jobDetail'; job: Job }
+    | { type: 'onboarding' }
+    | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
+    | { type: 'hrAnalysis'; job: Job }
+    | { type: 'gmailScanner'; emails: Email[], analysisJobId: string | null, isLoading: boolean };
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function App() {
+    const [theme, setTheme] = useTheme();
+    const [view, setView] = useLocalStorage<View>('view', 'search');
     const [user, setUser] = useState<User | null>(null);
-    const [loadingAuth, setLoadingAuth] = useState(true);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-    const [profiles, setProfiles] = useState<Profile[]>([]);
-    const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
-    
+    const [profiles, setProfiles] = useImmer<Profile[]>([]);
+    const [activeProfileId, setActiveProfileId] = useLocalStorage<string | null>('activeProfileId', null);
+    const [jobs, setJobs] = useImmer<Job[]>([]);
     const [foundJobs, setFoundJobs] = useState<Job[]>([]);
-    const [trackedJobs, setTrackedJobs] = useState<Job[]>([]);
 
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
-    const [message, setMessage] = useState('Готов к поиску!');
+    const [message, setMessage] = useState('Настройте параметры поиска и нажмите "Найти вакансии".');
     
-    const [view, setView] = useState<AppView>('search');
-
-    // Modal States
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isFirstLogin, setIsFirstLogin] = useState(false);
-    const [viewingJob, setViewingJob] = useState<Job | null>(null);
-    const [modalContent, setModalContent] = useState<ModalContent | null>(null);
-    const [modalText, setModalText] = useState('');
-    const [isModalLoading, setIsModalLoading] = useState(false);
-    const [isScannerOpen, setIsScannerOpen] = useState(false);
-    const [scannerEmails, setScannerEmails] = useState<Email[]>([]);
-    const [scannerLoading, setScannerLoading] = useState(false);
-    const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
-
-
-    const [theme, setTheme] = useTheme();
+    const [modal, setModal] = useState<ModalState>({ type: 'none' });
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
     // Google Auth State
-    const [tokenClient, setTokenClient] = useState<any>(null);
-    const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+    const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
+    const [googleToken, setGoogleToken] = useLocalStorage<any | null>('google-token', null);
+    const [tokenClient, setTokenClient] = useState<any | null>(null);
     const [isGapiReady, setIsGapiReady] = useState(false);
-    const isGoogleConnected = !!googleUser;
+    
+    const isGoogleConnected = !!googleToken;
 
-    const updateStatus = (newStatus: AppStatus, newMessage: string) => {
-        setStatus(newStatus);
-        setMessage(newMessage);
-    };
+    const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
+    const isGoogleConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_');
 
-    // --- Authentication and Profile Loading ---
+    // --- Effects ---
+
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUser(user);
-                updateStatus(AppStatus.Loading, "Загрузка профилей...");
-                try {
-                    const loadedProfiles = await firestoreService.getProfiles(user.uid);
-                    if (loadedProfiles.length > 0) {
-                        setProfiles(loadedProfiles);
-                        setActiveProfile(loadedProfiles[0]);
-                    } else {
-                        setIsFirstLogin(true);
-                    }
-                } catch (error) {
-                    console.error("Error loading profiles:", error);
-                    updateStatus(AppStatus.Error, "Не удалось загрузить профили.");
-                }
-            } else {
-                setUser(null);
-                setProfiles([]);
-                setActiveProfile(null);
-            }
-            setLoadingAuth(false);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            setIsAuthLoading(false);
         });
         return () => unsubscribe();
     }, []);
 
-    useEffect(() => {
-        if (user && activeProfile) {
-            updateStatus(AppStatus.Loading, "Загрузка отслеживаемых вакансий...");
-            firestoreService.getTrackedJobs(user.uid)
-                .then(jobs => {
-                    setTrackedJobs(jobs);
-                    updateStatus(AppStatus.Idle, "Готов к работе.");
-                })
-                .catch(error => {
-                    console.error("Error loading tracked jobs:", error);
-                    updateStatus(AppStatus.Error, "Не удалось загрузить вакансии.");
-                });
-        }
-    }, [user, activeProfile]);
-
-     // --- Google API Initialization ---
-    useEffect(() => {
-        const initGoogleApis = async () => {
-            try {
-                await googleAuthService.gapiLoad('client:oauth2');
-                await googleAuthService.initGapiClient();
-                setIsGapiReady(true);
-                const client = googleAuthService.initTokenClient(async (resp) => {
-                    if (resp.error) {
-                        console.error('Google token error:', resp.error);
-                        return;
-                    }
-                    const userInfoResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                        headers: { 'Authorization': `Bearer ${resp.access_token}` }
-                    });
-                    const userInfo = await userInfoResp.json();
-                    setGoogleUser({ name: userInfo.name, email: userInfo.email, picture: userInfo.picture });
-                });
-                setTokenClient(client);
-            } catch (error) {
-                console.error("Error initializing Google API:", error);
-            }
-        };
-        initGoogleApis();
-    }, []);
-
-
-    // --- Handlers ---
-    const handleLogout = () => {
-        signOut(auth);
-    };
-
-    const handleSearch = async () => {
-        if (!activeProfile) {
-            updateStatus(AppStatus.Error, 'Сначала выберите или создайте профиль.');
+    const handleGoogleAuthResponse = useCallback(async (tokenResponse: any) => {
+        if (tokenResponse.error) {
+            console.error('Google Auth Error:', tokenResponse);
+            setMessage(`Ошибка аутентификации Google: ${tokenResponse.error_description || tokenResponse.error}`);
+            setStatus(AppStatus.Error);
+            setGoogleToken(null);
+            setGoogleUser(null);
             return;
         }
-        updateStatus(AppStatus.Loading, 'ИИ анализирует сайты в поисках лучших вакансий...');
+
+        if (tokenResponse.access_token) {
+            gapi.client.setToken({ access_token: tokenResponse.access_token });
+            setGoogleToken(tokenResponse);
+            try {
+                const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { 'Authorization': `Bearer ${tokenResponse.access_token}` }
+                });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch user info, status: ${response.status}`);
+                }
+                const userInfo = await response.json();
+                setGoogleUser({
+                    name: userInfo.name,
+                    email: userInfo.email,
+                    picture: userInfo.picture,
+                });
+            } catch (error) {
+                console.error("Failed to fetch Google user info:", error);
+                setStatus(AppStatus.Error);
+                setMessage("Не удалось получить информацию о пользователе Google.");
+                setGoogleToken(null);
+                setGoogleUser(null);
+                gapi.client.setToken(null);
+            }
+        }
+    }, [setGoogleUser, setGoogleToken]);
+
+    useEffect(() => {
+        if (!isGoogleConfigured) return;
+    
+        const scriptLoadCheckInterval = setInterval(() => {
+            if (window.gapi && window.google) {
+                clearInterval(scriptLoadCheckInterval);
+                try {
+                    // Initialize GSI first for a responsive UI. It's fast and local.
+                    const client = initTokenClient(handleGoogleAuthResponse);
+                    setTokenClient(client);
+                    
+                    // Initialize GAPI in the background. This involves network requests.
+                    gapiLoad('client').then(() => {
+                        initGapiClient().then(() => {
+                           setIsGapiReady(true);
+                        }).catch(gapiInitError => {
+                            console.error("Failed to initialize GAPI client:", gapiInitError);
+                            setStatus(AppStatus.Error);
+                            setMessage("Не удалось загрузить Gmail API. Функции почты могут не работать.");
+                        });
+                    }).catch(gapiLoadError => {
+                        console.error("Failed to load GAPI client library:", gapiLoadError);
+                        setStatus(AppStatus.Error);
+                        setMessage("Не удалось загрузить библиотеку Google. Функции почты могут не работать.");
+                    });
+
+                } catch (error) {
+                    console.error("Failed to initialize Google Auth clients:", error);
+                    setStatus(AppStatus.Error);
+                    setMessage("Не удалось инициализировать сервисы Google. Проверьте консоль.");
+                }
+            }
+        }, 150);
+    
+        const timeout = setTimeout(() => {
+            clearInterval(scriptLoadCheckInterval);
+            if (!window.gapi || !window.google) {
+                console.error("Google API scripts failed to load within 5 seconds.");
+                setStatus(AppStatus.Error);
+                setMessage("Не удалось загрузить скрипты Google. Проверьте интернет-соединение и отключите блокировщики рекламы, затем обновите страницу.");
+            }
+        }, 5000);
+    
+        return () => {
+            clearInterval(scriptLoadCheckInterval);
+            clearTimeout(timeout);
+        };
+    }, [isGoogleConfigured, handleGoogleAuthResponse]);
+
+    // This effect re-applies the stored token to the GAPI client when the app loads
+    // or when the GAPI client becomes ready.
+    useEffect(() => {
+        if (isGapiReady && googleToken) {
+            gapi.client.setToken({ access_token: googleToken.access_token });
+        }
+    }, [isGapiReady, googleToken]);
+
+
+    useEffect(() => {
+        if (!user) {
+            setProfiles([]);
+            setJobs([]);
+            return;
+        }
+
+        const unsubscribeProfiles = subscribeToProfiles(user.uid, (loadedProfiles) => {
+            setProfiles(loadedProfiles);
+            if (loadedProfiles.length > 0 && (!activeProfileId || !loadedProfiles.find(p => p.id === activeProfileId))) {
+                setActiveProfileId(loadedProfiles[0].id);
+            } else if (loadedProfiles.length === 0) {
+                setActiveProfileId(null);
+                 setModal({ type: 'onboarding' });
+            }
+        });
+
+        const unsubscribeJobs = subscribeToJobs(user.uid, (loadedJobs) => {
+            setJobs(loadedJobs);
+        });
+
+        return () => {
+            unsubscribeProfiles();
+            unsubscribeJobs();
+        };
+    }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId]);
+
+    const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
+    
+    // --- Google Auth Handlers ---
+    
+    const handleGoogleSignIn = () => {
+        if (tokenClient) {
+            tokenClient.requestAccessToken({ prompt: 'select_account' });
+        } else {
+            console.error("Google Token Client is not initialized yet.");
+            setStatus(AppStatus.Error);
+            setMessage("Клиент Google еще не готов. Пожалуйста, подождите несколько секунд и попробуйте снова.");
+        }
+    };
+    
+    const handleGoogleSignOut = () => {
+        if (googleToken) {
+            // FIX: The revokeToken function expects 0 arguments and gets the token from the gapi client.
+            revokeToken();
+            setGoogleUser(null);
+            setGoogleToken(null);
+        }
+    };
+
+    const handleLogout = () => {
+        signOut(auth).catch(error => console.error("Logout failed:", error));
+    };
+
+    // --- Profile Handlers ---
+
+    const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
+        if (!activeProfile) return;
+        
+        setProfiles(currentProfiles => {
+            const profileIndex = currentProfiles.findIndex(p => p.id === activeProfile.id);
+            if (profileIndex === -1) return currentProfiles;
+            
+            const updatedProfile = { ...currentProfiles[profileIndex] };
+            updater(updatedProfile);
+
+            updateProfile(updatedProfile).catch(console.error);
+            
+            const newProfiles = [...currentProfiles];
+            newProfiles[profileIndex] = updatedProfile;
+            return newProfiles;
+        });
+    }, [activeProfile, setProfiles]);
+
+    const handleAddProfile = async (initialData?: { resume: string; settings: SearchSettings }) => {
+        if (!user) return;
+        const newProfileData: Omit<Profile, 'id'> = {
+            userId: user.uid,
+            name: initialData ? `Профиль по резюме` : `Новый профиль ${profiles.length + 1}`,
+            resume: initialData ? initialData.resume : DEFAULT_RESUME,
+            settings: initialData ? initialData.settings : DEFAULT_SEARCH_SETTINGS,
+            prompts: DEFAULT_PROMPTS,
+        };
+        const createdProfile = await addProfile(newProfileData);
+        setActiveProfileId(createdProfile.id);
+    };
+
+    const handleOpenOnboarding = () => {
+        setIsSettingsModalOpen(false);
+        setModal({ type: 'onboarding' });
+    }
+
+    const handleDeleteProfile = async (id: string) => {
+        if (profiles.length <= 1) {
+            alert('Нельзя удалить единственный профиль.');
+            return;
+        }
+        await deleteProfile(id);
+        if (activeProfileId === id) {
+            setActiveProfileId(profiles.find(p => p.id !== id)?.id || null);
+        }
+    };
+
+    // --- Job Search & Management ---
+
+    const handleSearch = async () => {
+        if (!activeProfile) return;
+
+        setStatus(AppStatus.Loading);
+        
         setFoundJobs([]);
         setView('search');
 
         try {
             const enabledPlatforms = activeProfile.settings.platforms.filter(p => p.enabled);
             if (enabledPlatforms.length === 0) {
-                throw new Error("Нет активных площадок для поиска. Включите хотя бы одну в настройках.");
+                setStatus(AppStatus.Error);
+                setMessage("Нет активных площадок для поиска. Включите хотя бы одну в Настройках -> Платформы.");
+                return;
             }
 
-            const promises = enabledPlatforms.map(platform => 
-                geminiService.findJobsOnRealWebsite(DEFAULT_PROMPTS.jobSearch, activeProfile.resume, activeProfile.settings, platform)
-            );
+            const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
+            let allResults: Job[] = [];
             
-            const results = await Promise.all(promises);
-            const allJobs = results.flat().map(job => ({
-                ...job,
-                id: uuidv4(),
-                userId: user!.uid,
-                profileId: activeProfile.id,
-            }));
+            for (const platform of enabledPlatforms) {
+                setMessage(`ИИ сканирует ${platform.name}...`);
+                const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings, platform);
+                const newJobsFromPlatform = platformResults
+                    .filter(job => !existingJobUrls.has(job.url))
+                    .map(job => ({
+                        ...job,
+                        id: uuidv4(),
+                        kanbanStatus: 'new' as KanbanStatus,
+                        profileId: activeProfile.id,
+                        userId: user!.uid,
+                        history: [],
+                    }));
+                allResults = [...allResults, ...newJobsFromPlatform];
+            }
 
-            setFoundJobs(allJobs);
-            updateStatus(AppStatus.Success, `Найдено ${allJobs.length} релевантных вакансий!`);
-        } catch (error: any) {
-            console.error(error);
-            updateStatus(AppStatus.Error, error.message || 'Произошла ошибка при поиске.');
+            setFoundJobs(allResults);
+            setStatus(AppStatus.Success);
+             if (allResults.length > 0) {
+                setMessage(`Найдено ${allResults.length} новых релевантных вакансий с ${enabledPlatforms.length} площадок.`);
+            } else {
+                setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
+            }
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
         }
     };
+
+    const handleSaveJobs = async (jobsToSave: Job[]) => {
+        await addJobsBatch(jobsToSave);
+        setFoundJobs(prev => prev.filter(job => !jobsToSave.find(saved => saved.id === job.id)));
+        setView('applications');
+    };
     
-    const handleSaveJobs = (jobs: Job[]) => {
-        const jobsToSave = jobs.map(({ id, ...rest }) => rest);
-        firestoreService.saveTrackedJobs(jobsToSave)
-            .then(() => {
-                setTrackedJobs(prev => [...prev, ...jobs]);
-                setFoundJobs(prev => prev.filter(f => !jobs.some(s => s.id === f.id)));
-                updateStatus(AppStatus.Success, `Сохранено ${jobs.length} вакансий для отслеживания.`);
-                setView('tracker');
-            })
-            .catch(err => {
-                console.error(err);
-                updateStatus(AppStatus.Error, "Не удалось сохранить вакансии.");
-            });
+    const handleAddInteraction = (jobId: string, type: Interaction['type'], content: string) => {
+        const job = jobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        const newInteraction: Interaction = {
+            id: uuidv4(),
+            type,
+            content,
+            timestamp: new Date().toISOString(),
+        };
+        const updatedHistory = [...(job.history || []), newInteraction];
+        handleUpdateJob(jobId, { history: updatedHistory });
     };
 
-    const handleDismissJob = (jobId: string) => {
-        setFoundJobs(prev => prev.filter(job => job.id !== jobId));
+
+    const handleUpdateJob = (jobId: string, updates: Partial<Job>) => {
+        updateJob(jobId, updates);
     };
 
     const handleUpdateJobStatus = (jobId: string, newStatus: KanbanStatus) => {
-        firestoreService.updateJobStatus(jobId, newStatus)
-            .then(() => {
-                setTrackedJobs(prev => prev.map(job => job.id === jobId ? { ...job, kanbanStatus: newStatus } : job));
-            })
-            .catch(err => {
-                console.error(err);
-                updateStatus(AppStatus.Error, "Не удалось обновить статус.");
-            });
+        handleUpdateJob(jobId, { kanbanStatus: newStatus });
+        handleAddInteraction(jobId, 'status_change', `Статус изменен на "${kanbanStatusMap[newStatus]}"`);
     };
 
-    // Profile Management
-    const handleInitiateOnboarding = () => setIsFirstLogin(true);
+    // --- AI Actions ---
 
-    const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
+    const runAiAction = async (title: string, action: () => Promise<string>) => {
+        setModal({ type: 'aiContent', title, content: '', isLoading: true });
+        try {
+            const content = await action();
+            setModal({ type: 'aiContent', title, content, isLoading: false });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
+            setModal({ type: 'aiContent', title, content: `Ошибка: ${errorMessage}`, isLoading: false });
+        }
+    };
+
+    const handleAdaptResume = (job: Job) => {
         if (!activeProfile) return;
-        const newProfile = { ...activeProfile };
-        updater(newProfile);
-        setActiveProfile(newProfile);
-        firestoreService.saveProfile(newProfile); // Debounce this in a real app
-    }, [activeProfile]);
-
-    const handleSwitchProfile = (id: string) => {
-        const newActive = profiles.find(p => p.id === id);
-        if (newActive) setActiveProfile(newActive);
+        runAiAction(
+            `Адаптированное резюме для "${job.title}"`,
+            () => adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job)
+        );
     };
 
-    const handleDeleteProfile = (id: string) => {
-        if (profiles.length <= 1) {
-            updateStatus(AppStatus.Error, "Нельзя удалить единственный профиль.");
+    const handleGenerateEmail = (job: Job) => {
+        if (!activeProfile) return;
+        runAiAction(
+            `Сопроводительное письмо для "${job.company}"`,
+            async () => {
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+                return `Subject: ${subject}\n\n${body}`;
+            }
+        );
+    };
+
+    const handlePrepareForInterview = (job: Job) => {
+        if (!activeProfile) return;
+        runAiAction(
+            `Подготовка к собеседованию на "${job.title}"`,
+            () => getInterviewQuestions(job, activeProfile.resume)
+        );
+    };
+    
+    const handleAnalyzeHrResponse = async (job: Job, emailText: string) => {
+        if (!activeProfile) return;
+        setModal({ type: 'none' });
+        setStatus(AppStatus.Loading);
+        setMessage("Анализирую ответ от HR...");
+        try {
+            const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailText);
+            handleUpdateJobStatus(job.id, newStatus);
+            setStatus(AppStatus.Success);
+            setMessage(`Статус вакансии "${job.title}" обновлен на "${newStatus}".`);
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Произошла ошибка.');
+        }
+    };
+    
+    const handleQuickApply = async (action: 'email' | 'whatsapp' | 'telegram', job: Job) => {
+        if (!activeProfile) return;
+
+        setStatus(AppStatus.Loading);
+        
+        try {
+            if (action === 'email') {
+                setMessage('ИИ готовит текст для email...');
+                const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
+
+                if (isGoogleConnected && googleUser?.email) {
+                    await sendEmail({
+                        to: job.contacts?.email || '',
+                        subject,
+                        body,
+                        from: googleUser.email,
+                        fromName: activeProfile.name,
+                    });
+                     setMessage(`Email отправлен через ваш Gmail аккаунт.`);
+                     handleAddInteraction(job.id, 'email_sent', `Email отправлен: "${subject}"`);
+                } else {
+                    const url = `mailto:${job.contacts?.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    window.open(url, '_blank');
+                    setMessage(`Открыт почтовый клиент.`);
+                }
+            } else { // Messengers
+                setMessage('ИИ готовит сообщение для мессенджера...');
+                const message = await generateShortMessage(activeProfile.prompts.shortMessage, job, activeProfile.name);
+                 let url: string;
+                if (action === 'whatsapp') {
+                    const phone = job.contacts?.phone?.replace(/\D/g, ''); // Clean phone number
+                    url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                } else { // telegram
+                    const contact = job.contacts?.telegram?.replace('@', ''); // Clean username
+                    url = `tg://msg?to=${contact}&text=${encodeURIComponent(message)}`;
+                }
+                 window.open(url, '_blank');
+                 setMessage(`Открыт клиент для отправки сообщения.`);
+            }
+            
+            setStatus(AppStatus.Success);
+            if (job.kanbanStatus === 'new') {
+                handleUpdateJobStatus(job.id, 'tracking');
+            }
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
+            setStatus(AppStatus.Error);
+            setMessage(`Ошибка при генерации сообщения: ${errorMessage}`);
+            throw error;
+        }
+    };
+    
+    const handleQuickApplyFromCard = (job: Job) => {
+        if (!isGoogleConnected || !isGapiReady || !job.contacts?.email) {
+            const reason = !isGoogleConnected ? "Подключите Gmail" : !isGapiReady ? "API Google не готов" : "Email не указан";
+            setMessage(`Невозможно отправить: ${reason}`);
+            setStatus(AppStatus.Error);
             return;
         }
-        firestoreService.deleteProfile(id).then(() => {
-            const remaining = profiles.filter(p => p.id !== id);
-            setProfiles(remaining);
-            setActiveProfile(remaining[0] || null);
-        });
-    };
-    
-    // Onboarding
-    const handleOnboardingFinish = async (result: { resume: string, settings: SearchSettings, profileName: string }) => {
-        if (!user) return;
-        const newProfileData: Omit<Profile, 'id' | 'createdAt'> = {
-            userId: user.uid,
-            name: result.profileName,
-            resume: result.resume,
-            settings: { ...DEFAULT_SEARCH_SETTINGS, ...result.settings }
-        };
-        const newId = await firestoreService.saveProfile(newProfileData);
-        const newProfile = { ...newProfileData, id: newId, createdAt: new Date() } as Profile;
-        setProfiles(prev => [newProfile, ...prev]);
-        setActiveProfile(newProfile);
-        setIsFirstLogin(false);
+        handleQuickApply('email', job);
     };
 
-    // Modal Generators
-    const handleAdaptResume = async (job: Job) => {
-        if (!activeProfile) return;
-        setModalContent({ type: 'resume', job });
-        setIsModalLoading(true);
+    // --- Gmail Scanner ---
+    const handleOpenGmailScanner = async () => {
+        if (!activeProfile || !isGoogleConnected) return;
+        
+        setStatus(AppStatus.Loading);
+        setMessage("Сканирую Gmail на наличие ответов от HR...");
+        setModal({ type: 'gmailScanner', emails: [], analysisJobId: null, isLoading: true });
+
         try {
-            const adapted = await geminiService.adaptResume(DEFAULT_PROMPTS.resumeAdapt, activeProfile.resume, job);
-            setModalText(adapted);
-        } catch (e: any) { setModalText(`Ошибка: ${e.message}`); }
-        finally { setIsModalLoading(false); }
-    };
-    
-    const handleGenerateEmail = async (job: Job) => {
-        if (!activeProfile) return;
-        setModalContent({ type: 'cover-letter', job });
-        setIsModalLoading(true);
-        try {
-            const candidateName = activeProfile.name.split('-')[0].trim() || 'Кандидат';
-            const letter = await geminiService.generateCoverLetter(DEFAULT_PROMPTS.coverLetter, job, candidateName);
-            setModalText(`**Тема:** ${letter.subject}\n\n---\n\n${letter.body}`);
-        } catch (e: any) { setModalText(`Ошибка: ${e.message}`); }
-        finally { setIsModalLoading(false); }
-    };
-    
-    const handleGenerateQuestions = async (job: Job) => {
-        if (!activeProfile) return;
-        setModalContent({ type: 'questions', job });
-        setIsModalLoading(true);
-        try {
-            const questions = await geminiService.getInterviewQuestions(job, activeProfile.resume);
-            setModalText(questions);
-        } catch (e: any) { setModalText(`Ошибка: ${e.message}`); }
-        finally { setIsModalLoading(false); }
-    };
-    
-    // Google Integration
-    const handleGoogleSignIn = () => {
-        if (tokenClient) {
-            googleAuthService.getToken(tokenClient);
+            const emails = await listMessages();
+            setModal({ type: 'gmailScanner', emails, analysisJobId: null, isLoading: false });
+            
+            setStatus(AppStatus.Success);
+            setMessage(`Найдено ${emails.length} последних писем.`);
+
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            const errorMessage = error instanceof Error ? error.message : 'Ошибка при сканировании почты.';
+            setMessage(errorMessage);
+            setModal({type: 'none'});
         }
     };
     
-    const handleGoogleSignOut = () => {
-        googleAuthService.revokeToken();
-        setGoogleUser(null);
-    };
-
-    const handleScanReplies = async () => {
-        setIsScannerOpen(true);
-        setScannerLoading(true);
-        setAnalysisJobId(null);
-        try {
-            const emails = await gmailService.listMessages(30);
-            setScannerEmails(emails);
-        } catch (error: any) {
-            console.error(error);
-            updateStatus(AppStatus.Error, error.message);
-        } finally {
-            setScannerLoading(false);
-        }
-    };
-    
-    const handleAnalyzeReply = async (emailText: string) => {
+    const handleAnalyzeScannedReply = async (emailText: string) => {
         if (!activeProfile) return;
-        setAnalysisJobId('loading');
+        
         try {
-            const matchedJobId = await geminiService.matchEmailToJob(emailText, trackedJobs);
-            if (matchedJobId !== 'UNKNOWN') {
-                const newStatus = await geminiService.analyzeHrResponse(DEFAULT_PROMPTS.hrResponseAnalysis, emailText);
-                handleUpdateJobStatus(matchedJobId, newStatus);
-                setAnalysisJobId(matchedJobId);
-            } else {
-                 setAnalysisJobId('not_found');
+            setModal(prevModal => {
+                if (prevModal.type === 'gmailScanner') {
+                    return { ...prevModal, analysisJobId: 'loading' };
+                }
+                return prevModal;
+            });
+
+            const matchedJobId = await matchEmailToJob(emailText, jobs);
+            const matchedJob = jobs.find(j => j.id === matchedJobId);
+            
+            if (!matchedJob) {
+                throw new Error("Не удалось найти подходящую вакансию для этого письма.");
             }
-        } catch (error: any) {
-            console.error(error);
-            updateStatus(AppStatus.Error, error.message);
-            setAnalysisJobId(null);
+
+            setModal(prevModal => {
+                if (prevModal.type === 'gmailScanner') {
+                    return { ...prevModal, analysisJobId: matchedJob.id };
+                }
+                return prevModal;
+            });
+            
+            await handleAnalyzeHrResponse(matchedJob, emailText);
+
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Ошибка при анализе ответа.');
+        } finally {
+             setTimeout(() => {
+                setModal(prev => prev.type === 'gmailScanner' ? { ...prev, analysisJobId: null } : prev);
+            }, 3000); 
         }
     };
-    
-    if (!isFirebaseConfigured() || !isGoogleApiConfigured()) {
-        return <ConfigurationError isFirebaseOk={isFirebaseConfigured()} isGoogleOk={isGoogleApiConfigured()} />;
-    }
 
+
+    // --- Render ---
+
+    const renderModal = () => {
+        if (!isFirebaseConfigured || !isGoogleConfigured) return null;
+        switch (modal.type) {
+            case 'jobDetail':
+                return <JobDetailModal
+                    job={modal.job}
+                    onClose={() => setModal({ type: 'none' })}
+                    onUpdateJob={handleUpdateJob}
+                    onAdaptResume={handleAdaptResume}
+                    onGenerateEmail={handleGenerateEmail}
+                    onPrepareForInterview={handlePrepareForInterview}
+                    onAnalyzeResponse={(job) => setModal({ type: 'hrAnalysis', job })}
+                    onQuickApplyEmail={(job) => handleQuickApply('email', job)}
+                    onQuickApplyWhatsapp={(job) => handleQuickApply('whatsapp', job)}
+                    onQuickApplyTelegram={(job) => handleQuickApply('telegram', job)}
+                    isGoogleConnected={isGoogleConnected}
+                    isGapiReady={isGapiReady}
+                />;
+            case 'aiContent':
+                return <Modal
+                    title={modal.title}
+                    onClose={() => setModal({ type: 'none' })}
+                    isLoading={modal.isLoading}>
+                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">{modal.content}</div>
+                </Modal>;
+            case 'onboarding':
+                return <OnboardingModal
+                    onClose={() => {
+                        setModal({ type: 'none' });
+                        if(profiles.length === 0) handleAddProfile();
+                    }}
+                    onFinish={(result) => {
+                        handleAddProfile(result);
+                        setModal({ type: 'none' });
+                    }}
+                />;
+            case 'hrAnalysis':
+                return <HrAnalysisModal 
+                    job={modal.job}
+                    onClose={() => setModal({ type: 'none' })}
+                    onAnalyze={(emailText) => handleAnalyzeHrResponse(modal.job, emailText)}
+                />;
+            case 'gmailScanner':
+                return <GmailScannerModal
+                    emails={modal.emails}
+                    jobs={jobs}
+                    analysisJobId={modal.analysisJobId}
+                    isLoading={modal.isLoading}
+                    onClose={() => setModal({ type: 'none' })}
+                    onAnalyzeReply={handleAnalyzeScannedReply}
+                />;
+            default:
+                return null;
+        }
+    };
+
+    if (!isFirebaseConfigured || !isGoogleConfigured) {
+        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
+    }
+    
     return (
-        <AuthGuard user={user} loading={loadingAuth}>
-            <div className={`min-h-screen bg-slate-100 dark:bg-slate-900 font-sans ${theme}`}>
+        <AuthGuard user={user} loading={isAuthLoading}>
+            <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-200 font-sans`}>
                 <Header 
                     theme={theme} 
                     setTheme={setTheme} 
-                    user={user}
-                    profiles={profiles}
-                    activeProfile={activeProfile}
-                    onSwitchProfile={handleSwitchProfile}
-                    onAddProfile={handleInitiateOnboarding}
-                    onLogout={handleLogout}
-                    onOpenSettings={() => setIsSettingsOpen(true)}
+                    user={user} 
+                    onLogout={handleLogout} 
+                    onOpenSettings={() => setIsSettingsModalOpen(true)}
                 />
-
-                <main className="container mx-auto p-4 md:p-6">
-                    {activeProfile ? (
-                        <StatusBar status={status} message={message} />
-                    ) : !isFirstLogin ? (
-                         <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                            <h3 className="text-xl font-semibold">Добро пожаловать!</h3>
-                            <p className="text-slate-500 dark:text-slate-400 mt-2">Давайте создадим ваш первый профиль для поиска работы с помощью AI-ассистента.</p>
-                             <button onClick={handleInitiateOnboarding} className="mt-4 px-4 py-2 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700">
-                                Создать профиль с ИИ
+                <main className="container mx-auto p-4 md:p-6 flex-1">
+                    <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-center sm:text-left">
+                            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Панель управления поиском</h2>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Активный профиль: <span className="font-semibold text-primary-500">{activeProfile?.name || '...'}</span>
+                            </p>
+                        </div>
+                         <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                            <button onClick={() => setView('search')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'search' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                Поиск
+                            </button>
+                            <button onClick={() => setView('applications')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'applications' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                Отклики
                             </button>
                         </div>
-                    ) : null }
-
-                    {activeProfile && (
-                        <>
-                            <div className="flex justify-center mb-6 border-b border-slate-300 dark:border-slate-700">
-                                <button onClick={() => setView('search')} className={`px-4 py-2 font-semibold ${view === 'search' ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400' : 'text-slate-500'}`}>Поиск</button>
-                                <button onClick={() => setView('tracker')} className={`px-4 py-2 font-semibold ${view === 'tracker' ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400' : 'text-slate-500'}`}>Отклики</button>
-                            </div>
-
-                            {view === 'search' && (
-                                <JobList
-                                    jobs={foundJobs}
-                                    onSaveJobs={handleSaveJobs}
-                                    onDismissJob={handleDismissJob}
-                                    onViewDetails={setViewingJob}
-                                    onAdaptResume={handleAdaptResume}
-                                    onGenerateEmail={handleGenerateEmail}
-                                />
+                        <button
+                            onClick={handleSearch}
+                            disabled={status === AppStatus.Loading || !activeProfile}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        >
+                            {status === AppStatus.Loading ? (
+                                <>
+                                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                                 Поиск...
+                                </>
+                            ) : (
+                                <>
+                                <SparklesIcon className="w-5 h-5" />
+                                Найти вакансии с ИИ
+                                </>
                             )}
-                            {view === 'tracker' && (
-                                <ApplicationTracker
-                                    jobs={trackedJobs.filter(j => j.profileId === activeProfile.id)}
-                                    profiles={profiles}
-                                    onUpdateJobStatus={handleUpdateJobStatus}
-                                    onViewDetails={setViewingJob}
-                                    onAdaptResume={handleAdaptResume}
-                                    onGenerateEmail={handleGenerateEmail}
-                                    onQuickApplyEmail={() => {}}
-                                    isGoogleConnected={isGoogleConnected}
-                                    isGapiReady={isGapiReady}
-                                    onScanReplies={handleScanReplies}
-                                />
-                            )}
-                        </>
+                        </button>
+                    </div>
+                    
+                    {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
+
+                    {activeProfile ? (
+                        view === 'search' ? (
+                            <JobList
+                                jobs={foundJobs}
+                                onSaveJobs={handleSaveJobs}
+                                onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onAdaptResume={handleAdaptResume}
+                                onGenerateEmail={handleGenerateEmail}
+                            />
+                        ) : (
+                            <ApplicationTracker
+                                jobs={jobs.filter(j => j.profileId === activeProfile.id)}
+                                profiles={profiles}
+                                onUpdateJobStatus={handleUpdateJobStatus}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                                onAdaptResume={handleAdaptResume}
+                                onGenerateEmail={handleGenerateEmail}
+                                onQuickApplyEmail={handleQuickApplyFromCard}
+                                isGoogleConnected={isGoogleConnected}
+                                isGapiReady={isGapiReady}
+                                onScanReplies={handleOpenGmailScanner}
+                            />
+                        )
+                    ) : (
+                        <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+                            <p>Загрузка профиля...</p>
+                        </div>
                     )}
                 </main>
-
-                {/* Modals */}
-                {isSettingsOpen && activeProfile && (
-                    <SettingsModal
-                        isOpen={isSettingsOpen}
-                        onClose={() => setIsSettingsOpen(false)}
-                        profiles={profiles}
-                        activeProfile={activeProfile}
-                        onAddProfile={handleInitiateOnboarding}
-                        onDeleteProfile={handleDeleteProfile}
-                        onSwitchProfile={handleSwitchProfile}
-                        onUpdateProfile={handleUpdateProfile}
-                        googleUser={googleUser}
-                        isGoogleConnected={isGoogleConnected}
-                        onGoogleSignIn={handleGoogleSignIn}
-                        onGoogleSignOut={handleGoogleSignOut}
-                    />
-                )}
-                 {isFirstLogin && <OnboardingModal onFinish={handleOnboardingFinish} onClose={() => setIsFirstLogin(false)} />}
-                 {viewingJob && (
-                    <JobDetailModal 
-                        job={viewingJob} 
-                        onClose={() => setViewingJob(null)}
-                        onAdaptResume={handleAdaptResume}
-                        onGenerateEmail={handleGenerateEmail}
-                        onGenerateQuestions={handleGenerateQuestions}
-                    />
-                )}
-                 {modalContent && (
-                    <Modal
-                        title={
-                            modalContent.type === 'resume' ? `Адаптированное резюме для "${modalContent.job.title}"` :
-                            modalContent.type === 'cover-letter' ? `Сопроводительное письмо для "${modalContent.job.title}"` :
-                            `Вопросы к собеседованию для "${modalContent.job.title}"`
-                        }
-                        onClose={() => setModalContent(null)}
-                        isLoading={isModalLoading}
-                    >
-                        <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">{modalText}</div>
-                    </Modal>
-                )}
-                {isScannerOpen && (
-                    <GmailScannerModal 
-                        emails={scannerEmails}
-                        jobs={trackedJobs}
-                        analysisJobId={analysisJobId}
-                        isLoading={scannerLoading}
-                        onClose={() => setIsScannerOpen(false)}
-                        onAnalyzeReply={handleAnalyzeReply}
-                    />
-                )}
+                
+                <SettingsModal
+                    isOpen={isSettingsModalOpen}
+                    onClose={() => setIsSettingsModalOpen(false)}
+                    profiles={profiles}
+                    activeProfile={activeProfile}
+                    onAddProfile={handleOpenOnboarding}
+                    onDeleteProfile={handleDeleteProfile}
+                    onSwitchProfile={setActiveProfileId}
+                    onUpdateProfile={handleUpdateProfile}
+                    googleUser={googleUser}
+                    isGoogleConnected={isGoogleConnected}
+                    onGoogleSignIn={handleGoogleSignIn}
+                    onGoogleSignOut={handleGoogleSignOut}
+                />
+                {renderModal()}
             </div>
         </AuthGuard>
     );
