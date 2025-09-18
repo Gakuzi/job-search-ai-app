@@ -97,8 +97,13 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, settings: Se
         throw new Error(`Не удалось загрузить страницу с вакансиями с ${platform.name}. ${error instanceof Error ? error.message : ''}`);
     }
 
-    const prompt = promptTemplate.replace('{limit}', String(settings.limit));
-    const fullPrompt = `${prompt}\n\n## HTML-КОД ДЛЯ ПАРСИНГА:\n${htmlContent}`;
+    const prompt = promptTemplate
+        .replace('{platformName}', platform.name)
+        .replace('{positions}', settings.positions)
+        .replace('{location}', settings.location)
+        .replace('{limit}', String(settings.limit));
+
+    const fullPrompt = `${prompt}\n${htmlContent}`;
 
     const responseText = await runAiOperation(async (ai) => {
         const response = await ai.models.generateContent({
