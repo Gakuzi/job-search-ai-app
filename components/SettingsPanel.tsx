@@ -1,195 +1,276 @@
-import React, { useState, useEffect } from 'react';
-import type { Profile, SearchSettings, Prompts } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import type { Profile, SearchSettings } from '../types';
 import { AppStatus } from '../constants';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { useDebounce } from '../hooks/useDebounce';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
-import { PlusCircleIcon } from './icons/PlusCircleIcon';
-import GmailConnect from './GmailConnect';
+import { SparklesIcon } from './icons/SparklesIcon';
+import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+
+type SettingsTab = 'search' | 'resume' | 'profiles';
 
 interface SettingsPanelProps {
     profiles: Profile[];
     activeProfile: Profile | null;
-    onProfileChange: (profileId: string) => void;
-    onProfileUpdate: (profile: Profile) => void;
+    onAddProfile: () => void;
+    onDeleteProfile: (id: string) => void;
+    onSwitchProfile: (id: string) => void;
+    onUpdateProfile: (updater: (draft: Profile) => void) => void;
     onSearch: () => void;
+    onExport: () => void;
+    onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
     status: AppStatus;
-    // Gmail props
-    user: { email?: string | null } | null;
-    googleAccessToken: string | null;
-    onGoogleConnect: () => void;
-    onGoogleDisconnect: () => void;
-    isGoogleAuthLoading: boolean;
-    googleAuthError: string | null;
+    isSettingsExpanded: boolean;
+    setIsSettingsExpanded: (isExpanded: boolean) => void;
 }
 
-const SettingsPanel: React.FC<SettingsPanelProps> = (props) => {
-    const { 
-        profiles, activeProfile, onProfileChange, onProfileUpdate, onSearch, status,
-        user, googleAccessToken, onGoogleConnect, onGoogleDisconnect, isGoogleAuthLoading, googleAuthError
-    } = props;
-    
-    const [currentProfile, setCurrentProfile] = useState<Profile | null>(activeProfile);
-    const [activeTab, setActiveTab] = useState('settings');
+const SettingsPanel: React.FC<SettingsPanelProps> = ({
+    profiles,
+    activeProfile,
+    onAddProfile,
+    onDeleteProfile,
+    onSwitchProfile,
+    onUpdateProfile,
+    onSearch,
+    onExport,
+    onImport,
+    status,
+    isSettingsExpanded,
+    setIsSettingsExpanded,
+}) => {
+    const [activeTab, setActiveTab] = useState<SettingsTab>('search');
+    const importInputRef = useRef<HTMLInputElement>(null);
+
+    const [profileName, setProfileName] = useState(activeProfile?.name || '');
+    const debouncedProfileName = useDebounce(profileName, 500);
 
     useEffect(() => {
-        setCurrentProfile(activeProfile);
+        if (activeProfile) {
+            setProfileName(activeProfile.name);
+        }
     }, [activeProfile]);
 
-    const handleInputChange = <K extends keyof SearchSettings>(key: K, value: SearchSettings[K]) => {
-        if (!currentProfile) return;
-        const newSettings = { ...currentProfile.settings, [key]: value };
-        const updatedProfile = { ...currentProfile, settings: newSettings };
-        setCurrentProfile(updatedProfile);
-        onProfileUpdate(updatedProfile);
-    };
-    
-    const handleResumeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        if (!currentProfile) return;
-        const updatedProfile = { ...currentProfile, resume: e.target.value };
-        setCurrentProfile(updatedProfile);
-        onProfileUpdate(updatedProfile);
+    useEffect(() => {
+        if (debouncedProfileName && activeProfile && debouncedProfileName !== activeProfile.name) {
+            onUpdateProfile(draft => {
+                draft.name = debouncedProfileName;
+            });
+        }
+    }, [debouncedProfileName, activeProfile, onUpdateProfile]);
+
+
+    if (!activeProfile) {
+        return (
+             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6 p-4 text-center">
+                <p className="text-slate-600 dark:text-slate-300">Профиль не выбран. Создайте новый профиль, чтобы начать.</p>
+                 {profiles.length === 0 && <button onClick={onAddProfile} className="mt-4 px-4 py-2 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700">
+                    Создать профиль
+                </button>}
+            </div>
+        );
     }
-    
-     const handlePromptChange = <K extends keyof Prompts>(key: K, value: Prompts[K]) => {
-        if (!currentProfile) return;
-        const newPrompts = { ...currentProfile.prompts, [key]: value };
-        const updatedProfile = { ...currentProfile, prompts: newPrompts };
-        setCurrentProfile(updatedProfile);
-        onProfileUpdate(updatedProfile);
+
+    const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value, type } = e.target;
+        let parsedValue: any = value;
+        if (type === 'number') parsedValue = parseInt(value, 10) || 0;
+        if (type === 'checkbox') parsedValue = (e.target as HTMLInputElement).checked;
+        
+        onUpdateProfile(draft => {
+            draft.settings = { ...draft.settings, [name]: parsedValue };
+        });
     };
 
-    if (!currentProfile) {
-        return (
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md">
-                 <h2 className="text-lg font-bold mb-4">Профиль поиска</h2>
-                <div className="text-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg">
-                    <p className="text-slate-500 dark:text-slate-400">Профиль не найден.</p>
-                    <button className="mt-2 text-sm font-semibold text-primary-600 hover:text-primary-500 flex items-center gap-1 mx-auto">
-                        <PlusCircleIcon className="w-5 h-5" />
-                        Создать новый профиль
-                    </button>
-                </div>
-            </div>
-        )
-    }
+    const handleResumeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const { value } = e.target;
+        onUpdateProfile(draft => { draft.resume = value; });
+    };
+
+    const handleDelete = () => {
+        if (activeProfile) {
+            onDeleteProfile(activeProfile.id);
+        }
+    };
     
-    const TabButton = ({ id, label }: { id: string, label: string }) => (
-        <button 
-            onClick={() => setActiveTab(id)}
-            className={`px-3 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+    const TabButton: React.FC<{tabId: SettingsTab, label: string}> = ({tabId, label}) => (
+        <button
+            onClick={() => setActiveTab(tabId)}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabId ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
         >
             {label}
         </button>
-    )
+    );
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md">
-            <div className="p-4 md:p-6 space-y-4">
-                <div>
-                    <label htmlFor="profile-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Профиль поиска</label>
-                    <select 
-                        id="profile-select" 
-                        value={activeProfile?.id || ''} 
-                        onChange={e => onProfileChange(e.target.value)}
-                        className="w-full input-field"
-                    >
-                        {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6">
+            <button
+                className="w-full p-4 flex justify-between items-center text-left"
+                onClick={() => setIsSettingsExpanded(!isSettingsExpanded)}
+            >
+                <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Панель Управления</h2>
+                    {activeProfile && <span className="px-2 py-1 text-xs font-semibold text-primary-800 bg-primary-100 dark:text-primary-200 dark:bg-primary-500/20 rounded-full">{activeProfile.name}</span>}
                 </div>
-                
-                <div className="border-b border-slate-200 dark:border-slate-700">
-                    <nav className="flex gap-2 -mb-px">
-                       <TabButton id="settings" label="Параметры" />
-                       <TabButton id="resume" label="Резюме" />
-                       <TabButton id="integrations" label="Интеграции" />
-                       <TabButton id="prompts" label="Промпты" />
-                    </nav>
+                <ChevronDownIcon className={`w-5 h-5 transition-transform ${isSettingsExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isSettingsExpanded && (
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700">
+                    <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
+                        <TabButton tabId="search" label="Поиск"/>
+                        <TabButton tabId="resume" label="Резюме"/>
+                        <TabButton tabId="profiles" label="Профили"/>
+                    </div>
+                    
+                    <div className="space-y-6">
+                        {activeTab === 'search' && (
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="positions" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Желаемые должности</label>
+                                    <input id="positions" name="positions" type="text" value={activeProfile.settings.positions} onChange={handleSettingsChange} className="mt-1 w-full input-style"/>
+                                </div>
+                                 <div>
+                                    <label htmlFor="location" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Локация</label>
+                                    <input id="location" name="location" type="text" value={activeProfile.settings.location} onChange={handleSettingsChange} className="mt-1 w-full input-style"/>
+                                </div>
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label htmlFor="salary" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Зарплата (от)</label>
+                                        <input id="salary" name="salary" type="number" value={activeProfile.settings.salary} onChange={handleSettingsChange} className="mt-1 w-full input-style"/>
+                                    </div>
+                                    <div className="flex-1">
+                                        <label htmlFor="currency" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Валюта</label>
+                                        <select id="currency" name="currency" value={activeProfile.settings.currency} onChange={handleSettingsChange} className="mt-1 w-full input-style">
+                                            <option value="RUB">RUB</option>
+                                            <option value="USD">USD</option>
+                                            <option value="EUR">EUR</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 pt-6">
+                                    <input id="remote" name="remote" type="checkbox" checked={activeProfile.settings.remote} onChange={handleSettingsChange} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"/>
+                                    <label htmlFor="remote" className="text-sm font-medium text-slate-700 dark:text-slate-300">Рассматриваю удаленную работу</label>
+                                </div>
+                                 <div className="md:col-span-2">
+                                    <label htmlFor="skills" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Ключевые навыки (через запятую)</label>
+                                    <textarea id="skills" name="skills" rows={3} value={activeProfile.settings.skills} onChange={handleSettingsChange} className="mt-1 w-full input-style"/>
+                                </div>
+                            </div>
+                        )}
+                        {activeTab === 'resume' && (
+                             <div>
+                                <label htmlFor="resume" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Базовое резюме (Markdown)</label>
+                                <textarea id="resume" name="resume" value={activeProfile.resume} onChange={handleResumeChange} rows={15} className="mt-1 w-full input-style font-mono text-xs"/>
+                            </div>
+                        )}
+                         {activeTab === 'profiles' && (
+                             <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
+                                <div>
+                                    <label htmlFor="profile-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Имя активного профиля</label>
+                                    <input 
+                                        id="profile-name"
+                                        type="text"
+                                        value={profileName}
+                                        onChange={(e) => setProfileName(e.target.value)}
+                                        className="w-full input-style"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="profile-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Переключить/Удалить профиль</label>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <select id="profile-select" value={activeProfile.id || ''} onChange={(e) => onSwitchProfile(e.target.value)} className="flex-grow w-full input-style">
+                                            {profiles.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                                        </select>
+                                        <div className="flex gap-2 w-full sm:w-auto">
+                                            <button onClick={onAddProfile} className="flex-1 sm:flex-none btn-secondary">Новый</button>
+                                            <button onClick={handleDelete} disabled={profiles.length <= 1} className="flex-1 sm:flex-none btn-danger">Удалить</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-                
-                <div className="pt-4">
-                     {activeTab === 'settings' && (
-                         <div className="space-y-4 animate-fade-in">
-                            <InputField label="Должности" value={currentProfile.settings.positions} onChange={e => handleInputChange('positions', e.target.value)} />
-                            <InputField label="Зарплата от" type="number" value={currentProfile.settings.salary} onChange={e => handleInputChange('salary', parseInt(e.target.value, 10))} />
-                            <InputField label="Локация" value={currentProfile.settings.location} onChange={e => handleInputChange('location', e.target.value)} />
-                             <InputField label="Ключевые навыки" value={currentProfile.settings.skills} onChange={e => handleInputChange('skills', e.target.value)} />
-                        </div>
-                     )}
-                     {activeTab === 'resume' && (
-                         <div className="animate-fade-in">
-                            <textarea
-                                value={currentProfile.resume}
-                                onChange={handleResumeChange}
-                                rows={15}
-                                className="w-full input-field text-sm"
-                                placeholder="Вставьте сюда ваше резюме..."
-                            />
-                         </div>
-                     )}
-                     {activeTab === 'integrations' && (
-                         <div className="animate-fade-in">
-                             <GmailConnect
-                                isConnected={!!googleAccessToken}
-                                userEmail={user?.email}
-                                onConnect={onGoogleConnect}
-                                onDisconnect={onGoogleDisconnect}
-                                isLoading={isGoogleAuthLoading}
-                                error={googleAuthError}
-                             />
-                         </div>
-                     )}
-                     {activeTab === 'prompts' && (
-                        <div className="space-y-4 animate-fade-in">
-                             <p className="text-xs text-slate-500 dark:text-slate-400">Здесь можно тонко настроить поведение ИИ. Редактируйте с осторожностью.</p>
-                             <InputField label="Парсинг вакансий" type="textarea" value={currentProfile.prompts.jobSearch} onChange={e => handlePromptChange('jobSearch', e.target.value)} />
-                             <InputField label="Адаптация резюме" type="textarea" value={currentProfile.prompts.resumeAdapt} onChange={e => handlePromptChange('resumeAdapt', e.target.value)} />
-                             <InputField label="Сопроводительное" type="textarea" value={currentProfile.prompts.coverLetter} onChange={e => handlePromptChange('coverLetter', e.target.value)} />
-                             <InputField label="Анализ ответа HR" type="textarea" value={currentProfile.prompts.hrResponseAnalysis} onChange={e => handlePromptChange('hrResponseAnalysis', e.target.value)} />
-                             <InputField label="Сопоставление Email" type="textarea" value={currentProfile.prompts.emailJobMatch} onChange={e => handlePromptChange('emailJobMatch', e.target.value)} />
-                        </div>
-                     )}
-                </div>
-            </div>
-            
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700">
+            )}
+             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-b-lg">
                 <button
                     onClick={onSearch}
                     disabled={status === AppStatus.Loading}
-                    className="w-full flex justify-center items-center gap-2 px-4 py-3 text-sm font-semibold text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:bg-slate-400"
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
                 >
-                    <SparklesIcon className="w-5 h-5" />
-                    {status === AppStatus.Loading ? 'Поиск...' : 'Найти вакансии с ИИ'}
+                    {status === AppStatus.Loading ? (
+                        <>
+                         <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                         Поиск...
+                        </>
+                    ) : (
+                        <>
+                        <SparklesIcon className="w-5 h-5" />
+                        Найти вакансии с ИИ
+                        </>
+                    )}
                 </button>
             </div>
              <style>{`
-                .animate-fade-in {
-                    animation: fadeIn 0.3s ease-in-out;
+                .input-style {
+                    padding: 0.5rem 0.75rem;
+                    background-color: #f1f5f9;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 0.375rem;
+                    outline: none;
                 }
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(10px); }
-                    to { opacity: 1; transform: translateY(0); }
+                .dark .input-style {
+                    background-color: #334155;
+                    border-color: #475569;
+                }
+                .input-style:focus {
+                    ring: 2px;
+                    border-color: #3b82f6;
+                }
+                .btn-secondary {
+                    padding: 0.5rem 1rem;
+                     font-size: 0.875rem;
+                    background-color: #e2e8f0;
+                    color: #1e293b;
+                    border-radius: 0.375rem;
+                }
+                .dark .btn-secondary {
+                    background-color: #475569;
+                    color: #e2e8f0;
+                }
+                .btn-danger {
+                     padding: 0.5rem 1rem;
+                     font-size: 0.875rem;
+                     background-color: #ef4444;
+                     color: white;
+                     border-radius: 0.375rem;
+                }
+                .btn-danger:disabled {
+                    background-color: #94a3b8;
+                    cursor: not-allowed;
+                }
+                .tooltip-text {
+                    position: absolute;
+                    bottom: 100%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    margin-bottom: 0.5rem;
+                    width: 16rem;
+                    padding: 0.5rem;
+                    font-size: 0.75rem;
+                    color: white;
+                    background-color: #1e293b;
+                    border-radius: 0.375rem;
+                    opacity: 0;
+                    transition: opacity 0.2s;
+                    pointer-events: none;
+                    z-index: 10;
+                }
+                .group:hover .tooltip-text {
+                    opacity: 1;
                 }
             `}</style>
         </div>
     );
 };
-
-interface InputFieldProps {
-    label: string;
-    value: string | number;
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-    type?: 'text' | 'number' | 'textarea';
-}
-
-const InputField: React.FC<InputFieldProps> = ({ label, value, onChange, type = 'text' }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{label}</label>
-        {type === 'textarea' ? (
-            <textarea value={value} onChange={onChange} rows={8} className="w-full input-field text-xs" />
-        ) : (
-            <input type={type} value={value} onChange={onChange} className="w-full input-field" />
-        )}
-    </div>
-);
 
 export default SettingsPanel;

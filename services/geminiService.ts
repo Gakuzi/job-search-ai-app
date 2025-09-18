@@ -1,10 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings, KanbanStatus, GmailMessage } from '../types';
+import type { Job, SearchSettings, KanbanStatus } from '../types';
 
 const getAiClient = () => {
-    // FIX: Initializing the Gemini client using the API key from environment variables,
-    // as per project guidelines. The key is assumed to be pre-configured and available.
-    return new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    // Vite использует `import.meta.env` для доступа к переменным окружения
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+        console.error("Gemini API key is not configured. Please set the VITE_GEMINI_API_KEY environment variable.");
+        throw new Error("Ключ Gemini API не настроен. Укажите его в переменных окружения на Vercel.");
+    }
+    return new GoogleGenAI({ apiKey });
 };
 
 
@@ -41,7 +45,7 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
         if (!htmlContent) {
             throw new Error('Не удалось получить HTML-контент со страницы поиска.');
         }
-    } catch (error: any) {
+    } catch (error) {
         console.error("Error fetching job page HTML:", error);
         throw new Error(`Не удалось загрузить страницу с вакансиями. Возможно, сайт-источник или прокси недоступен. ${error.message}`);
     }
@@ -236,28 +240,11 @@ export const analyzeHrResponse = async (promptTemplate: string, emailText: strin
     const result = response.text.trim().toLowerCase();
     
     // Validate the response from AI
-    const validStatuses: KanbanStatus[] = ['new', 'tracking', 'interview', 'offer', 'archive'];
-    if (validStatuses.includes(result as KanbanStatus)) {
+    if (['new', 'tracking', 'interview', 'offer', 'archive'].includes(result)) {
         return result as KanbanStatus;
     }
     
     // Fallback or error
     console.warn(`AI returned an unexpected status: '${result}'. Defaulting to 'tracking'.`);
     return 'tracking';
-};
-
-export const matchEmailToJob = async (promptTemplate: string, email: GmailMessage, jobs: Job[]): Promise<string | null> => {
-    const ai = getAiClient();
-    const emailText = `От: ${email.from}\nТема: ${email.subject}\n\n${email.body}`;
-    const jobsJson = JSON.stringify(jobs.map(j => ({ id: j.id, title: j.title, company: j.company })));
-    
-    const prompt = `${promptTemplate}\n\n# ПИСЬМО ДЛЯ АНАЛИЗА:\n${emailText}\n\n# СПИСОК ВАКАНСИЙ:\n${jobsJson}`;
-
-    const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt
-    });
-
-    const result = response.text.trim();
-    return result === 'NO_MATCH' ? null : result;
 };
