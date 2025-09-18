@@ -75,7 +75,8 @@ const App: React.FC = () => {
     const [promptTemplates, setPromptTemplates] = useLocalStorage<PromptTemplate[]>('promptTemplates', DEFAULT_PROMPTS);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
-    const isGoogleConnected = !!gAuth.gapi?.client?.getToken();
+    // FIX: Use the new `isConnected` helper from the googleAuthService to check the connection status. This resolves the TypeScript error.
+    const isGoogleConnected = gAuth.isConnected();
 
     useEffect(() => {
         if (!user) return;

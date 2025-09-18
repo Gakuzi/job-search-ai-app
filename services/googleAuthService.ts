@@ -60,3 +60,12 @@ export const revokeToken = () => {
         });
     }
 };
+
+// FIX: Add a helper function to check connection status, safely handling cases where the gapi client isn't loaded yet.
+export const isConnected = (): boolean => {
+    try {
+        return !!gapi.client.getToken();
+    } catch (e) {
+        return false;
+    }
+};
