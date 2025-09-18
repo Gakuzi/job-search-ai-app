@@ -1,340 +1,338 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
+import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 
 import Header from './components/Header';
 import SettingsPanel from './components/SettingsPanel';
 import JobList from './components/JobList';
-import JobDetailModal from './components/JobDetailModal';
-import Modal from './components/Modal';
-import StatusBar from './components/StatusBar';
-import OnboardingModal from './components/OnboardingModal';
-import AuthGuard from './components/AuthGuard';
 import ApplicationTracker from './components/ApplicationTracker';
-import FirebaseConfigError from './components/FirebaseConfigError';
+import StatusBar from './components/StatusBar';
+import Modal from './components/Modal';
+import OnboardingModal from './components/OnboardingModal';
+import JobDetailModal from './components/JobDetailModal';
 import HrAnalysisModal from './components/HrAnalysisModal';
+import AuthGuard from './components/AuthGuard';
+import FirebaseConfigError from './components/FirebaseConfigError';
 
 import { useTheme } from './hooks/useTheme';
-import { AppStatus, DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS, DEFAULT_RESUME } from './constants';
-import * as geminiService from './services/geminiService';
+import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
+import type { Job, Profile, KanbanStatus, SearchSettings } from './types';
+
+import {
+    findJobsOnRealWebsite,
+    adaptResume,
+    generateCoverLetter,
+    getInterviewQuestions,
+    analyzeHrResponse
+} from './services/geminiService';
 import { auth, firebaseConfig } from './services/firebase';
-import * as firestoreService from './services/firestoreService';
+import {
+    subscribeToProfiles,
+    addProfile,
+    updateProfile,
+    deleteProfile,
+    subscribeToJobs,
+    addJobsBatch,
+    updateJob,
+} from './services/firestoreService';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
-import type { Job, Profile, SearchSettings } from './types';
-import { kanbanStatusMap } from './types';
-
-
-// Проверка на наличие конфигурации Firebase
-const isFirebaseConfigured = () => {
-    return firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('...');
-}
+type View = 'search' | 'applications';
+type ModalState =
+    | { type: 'none' }
+    | { type: 'jobDetail'; job: Job }
+    | { type: 'onboarding' }
+    | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
+    | { type: 'hrAnalysis'; job: Job };
 
 
 function App() {
-    const [user, authLoading] = useAuthState(auth);
     const [theme, setTheme] = useTheme();
-    const [view, setView] = useState<'search' | 'applications'>('search');
-    
-    const [profiles, setProfiles] = useState<Profile[]>([]);
-    const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
-    
-    const [jobs, setJobs] = useState<Job[]>([]);
-    
-    const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
-    const [message, setMessage] = useState('Добро пожаловать! Настройте параметры и начните поиск.');
+    const [view, setView] = useLocalStorage<View>('view', 'search');
+    const [user, setUser] = useState<User | null>(null);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
 
-    const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-    const [jobForHrAnalysis, setJobForHrAnalysis] = useState<Job | null>(null);
-    const [isActionModalOpen, setIsActionModalOpen] = useState(false);
-    const [actionModalTitle, setActionModalTitle] = useState('');
-    const [actionModalContent, setActionModalContent] = useState('');
-    const [isActionLoading, setIsActionLoading] = useState(false);
-    const [showOnboarding, setShowOnboarding] = useState(false);
+    const [profiles, setProfiles] = useImmer<Profile[]>([]);
+    const [activeProfileId, setActiveProfileId] = useLocalStorage<string | null>('activeProfileId', null);
+    const [jobs, setJobs] = useImmer<Job[]>([]);
+    const [foundJobs, setFoundJobs] = useState<Job[]>([]);
+
+    const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
+    const [message, setMessage] = useState('Настройте параметры поиска и нажмите "Найти вакансии".');
     const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
+
+    const [modal, setModal] = useState<ModalState>({ type: 'none' });
+
+    const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            setIsAuthLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        if (!user) {
+            setProfiles([]);
+            setJobs([]);
+            return;
+        }
+
+        const unsubscribeProfiles = subscribeToProfiles(user.uid, (loadedProfiles) => {
+            setProfiles(loadedProfiles);
+            if (loadedProfiles.length > 0 && (!activeProfileId || !loadedProfiles.find(p => p.id === activeProfileId))) {
+                setActiveProfileId(loadedProfiles[0].id);
+            } else if (loadedProfiles.length === 0) {
+                setActiveProfileId(null);
+                 setModal({ type: 'onboarding' });
+            }
+        });
+
+        const unsubscribeJobs = subscribeToJobs(user.uid, (loadedJobs) => {
+            setJobs(loadedJobs);
+        });
+
+        return () => {
+            unsubscribeProfiles();
+            unsubscribeJobs();
+        };
+    }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId]);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
 
-    useEffect(() => {
-        if (user && isFirebaseConfigured()) {
-            const unsubscribeProfiles = firestoreService.subscribeToProfiles(user.uid, (loadedProfiles) => {
-                setProfiles(loadedProfiles);
-                if (loadedProfiles.length > 0) {
-                    if (!activeProfileId || !loadedProfiles.some(p => p.id === activeProfileId)) {
-                        setActiveProfileId(loadedProfiles[0].id);
-                    }
-                    setShowOnboarding(false);
-                } else {
-                    setShowOnboarding(true);
-                }
-            });
-
-            const unsubscribeJobs = firestoreService.subscribeToJobs(user.uid, setJobs);
-
-            return () => {
-                unsubscribeProfiles();
-                unsubscribeJobs();
-            };
-        } else if (!user) {
-            // Clear data on logout
-            setProfiles([]);
-            setJobs([]);
-            setActiveProfileId(null);
-        }
-    }, [user, activeProfileId]);
-
-    const handleLogout = () => {
-        auth.signOut();
-    };
-
-    const handleAddProfile = useCallback(async (profileData?: { resume: string, settings: SearchSettings }) => {
-        if (!user) return;
-        const newProfile: Omit<Profile, 'id'> = {
-            userId: user.uid,
-            name: `Профиль ${profiles.length + 1}`,
-            resume: profileData?.resume || DEFAULT_RESUME,
-            settings: profileData?.settings || DEFAULT_SEARCH_SETTINGS,
-            prompts: DEFAULT_PROMPTS,
-        };
-        const createdProfile = await firestoreService.addProfile(newProfile);
-        setActiveProfileId(createdProfile.id);
-        setShowOnboarding(false);
-        setIsSettingsExpanded(true);
-    }, [user, profiles.length]);
-
     const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
         if (!activeProfile) return;
-    
-        const tempDraft: Profile = JSON.parse(JSON.stringify(activeProfile));
-    
-        updater(tempDraft);
-    
-        firestoreService.updateProfile(tempDraft).catch(err => {
-            console.error("Failed to update profile", err);
-            setStatus(AppStatus.Error);
-            setMessage(`Ошибка обновления профиля: ${err.message}. Возможно, проблема с подключением к базе данных.`);
-        });
         
-        setProfiles(profiles.map(p => p.id === tempDraft.id ? tempDraft : p));
-    }, [activeProfile, profiles]);
+        // This is a safe way to update without Immer's complexities across async boundaries
+        setProfiles(currentProfiles => {
+            const profileIndex = currentProfiles.findIndex(p => p.id === activeProfile.id);
+            if (profileIndex === -1) return currentProfiles;
+            
+            const updatedProfile = { ...currentProfiles[profileIndex] };
+            updater(updatedProfile);
 
-    const handleDeleteProfile = useCallback(async (id: string) => {
+            updateProfile(updatedProfile).catch(console.error);
+            
+            const newProfiles = [...currentProfiles];
+            newProfiles[profileIndex] = updatedProfile;
+            return newProfiles;
+        });
+    }, [activeProfile, setProfiles]);
+
+    const handleAddProfile = async (initialData?: { resume: string; settings: SearchSettings }) => {
+        if (!user) return;
+        const newProfileData: Omit<Profile, 'id'> = {
+            userId: user.uid,
+            name: initialData ? `Профиль по резюме` : `Новый профиль ${profiles.length + 1}`,
+            resume: initialData ? initialData.resume : DEFAULT_RESUME,
+            settings: initialData ? initialData.settings : DEFAULT_SEARCH_SETTINGS,
+            prompts: DEFAULT_PROMPTS,
+        };
+        const createdProfile = await addProfile(newProfileData);
+        setActiveProfileId(createdProfile.id);
+    };
+
+    const handleDeleteProfile = async (id: string) => {
         if (profiles.length <= 1) {
-            alert("Нельзя удалить единственный профиль.");
+            alert('Нельзя удалить единственный профиль.');
             return;
         }
-        await firestoreService.deleteProfile(id);
-    }, [profiles.length]);
-    
-    const handleUpdateJob = useCallback((jobId: string, updates: Partial<Job>) => {
-        firestoreService.updateJob(jobId, updates).catch(err => console.error("Failed to update job", err));
-    }, []);
+        await deleteProfile(id);
+        if (activeProfileId === id) {
+            setActiveProfileId(profiles.find(p => p.id !== id)?.id || null);
+        }
+    };
 
-    const handleSearch = useCallback(async () => {
-        if (!activeProfile || !user) return;
+    const handleSearch = async () => {
+        if (!activeProfile) return;
+
         setStatus(AppStatus.Loading);
-        setMessage('Ищу реальные вакансии на hh.ru и анализирую их для вас...');
+        setMessage('ИИ анализирует HTML-код и ваше резюме...');
+        setFoundJobs([]);
+        setView('search');
+
         try {
-            const results = await geminiService.findJobsOnRealWebsite(
-                activeProfile.prompts.jobSearch,
-                activeProfile.resume,
-                activeProfile.settings
-            );
-
-            // Фильтрация дубликатов перед добавлением в базу
-            const existingUrls = new Set(
-                jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url)
-            );
-
-            const newJobsFromSearch = results.filter(job => job.url && !existingUrls.has(job.url));
-
-            if (newJobsFromSearch.length > 0) {
-                 const newJobs: Job[] = newJobsFromSearch.map(job => ({
-                    ...job,
-                    id: uuidv4(),
-                    kanbanStatus: 'new',
-                    profileId: activeProfile.id,
-                    userId: user.uid,
-                }));
-                await firestoreService.addJobsBatch(newJobs);
-                setStatus(AppStatus.Success);
-                setMessage(`Отлично! Найдено ${newJobs.length} новых релевантных вакансий.`);
-            } else {
-                setStatus(AppStatus.Success);
-                setMessage('Новых вакансий не найдено. Все актуальные уже есть в вашем списке.');
-            }
-            
+            const results = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings);
+            const jobsWithIds = results.map(job => ({
+                ...job,
+                id: uuidv4(),
+                kanbanStatus: 'new' as KanbanStatus,
+                profileId: activeProfile.id,
+                userId: user!.uid,
+            }));
+            setFoundJobs(jobsWithIds);
+            setStatus(AppStatus.Success);
+            setMessage(`Найдено ${jobsWithIds.length} релевантных вакансий.`);
             setIsSettingsExpanded(false);
         } catch (error) {
-            console.error(error);
-            const errorMessage = error instanceof Error ? error.message : 'Произошла неизвестная ошибка.';
             setStatus(AppStatus.Error);
-            setMessage(`Ошибка: ${errorMessage}`);
+            setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
         }
-    }, [activeProfile, user, jobs]);
+    };
+
+    const handleSaveJobs = async (jobsToSave: Job[]) => {
+        await addJobsBatch(jobsToSave);
+        setFoundJobs(prev => prev.filter(job => !jobsToSave.find(saved => saved.id === job.id)));
+        setView('applications');
+    };
+
+    const handleUpdateJob = (jobId: string, updates: Partial<Job>) => {
+        updateJob(jobId, updates);
+    };
+
+    const handleUpdateJobStatus = (jobId: string, newStatus: KanbanStatus) => {
+        handleUpdateJob(jobId, { kanbanStatus: newStatus });
+    };
+
+    const runAiAction = async (title: string, action: () => Promise<string>) => {
+        setModal({ type: 'aiContent', title, content: '', isLoading: true });
+        try {
+            const content = await action();
+            setModal({ type: 'aiContent', title, content, isLoading: false });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
+            setModal({ type: 'aiContent', title, content: `Ошибка: ${errorMessage}`, isLoading: false });
+        }
+    };
+
+    const handleAdaptResume = (job: Job) => {
+        if (!activeProfile) return;
+        runAiAction(
+            `Адаптированное резюме для "${job.title}"`,
+            () => adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job)
+        );
+    };
+
+    const handleGenerateEmail = (job: Job) => {
+        if (!activeProfile) return;
+        runAiAction(
+            `Сопроводительное письмо для "${job.company}"`,
+            () => generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name)
+        );
+    };
+
+    const handlePrepareForInterview = (job: Job) => {
+        if (!activeProfile) return;
+        runAiAction(
+            `Подготовка к собеседованию на "${job.title}"`,
+            () => getInterviewQuestions(job, activeProfile.resume)
+        );
+    };
     
-    const openActionModal = (title: string) => {
-        setIsActionModalOpen(true);
-        setActionModalTitle(title);
-        setIsActionLoading(true);
-        setActionModalContent('');
-    };
-
-    const handleAdaptResume = async (job: Job) => {
+    const handleAnalyzeHrResponse = async (job: Job, emailText: string) => {
         if (!activeProfile) return;
-        openActionModal(`Адаптация резюме для "${job.title}"`);
+        setModal({ type: 'none' });
+        setStatus(AppStatus.Loading);
+        setMessage("Анализирую ответ от HR...");
         try {
-            const result = await geminiService.adaptResume(activeProfile.prompts.resumeAdapt, activeProfile.resume, job);
-            setActionModalContent(result);
+            const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailText);
+            handleUpdateJobStatus(job.id, newStatus);
+            setStatus(AppStatus.Success);
+            setMessage(`Статус вакансии "${job.title}" обновлен на "${newStatus}".`);
         } catch (error) {
-            setActionModalContent(`Ошибка при адаптации резюме: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        } finally {
-            setIsActionLoading(false);
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Произошла ошибка.');
         }
     };
 
-    const handleGenerateEmail = async (job: Job) => {
-        if (!activeProfile) return;
-        openActionModal(`Сопроводительное письмо для "${job.company}"`);
-        try {
-            const result = await geminiService.generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
-            setActionModalContent(result);
-        } catch (error) {
-            setActionModalContent(`Ошибка при генерации письма: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        } finally {
-            setIsActionLoading(false);
-        }
+    const handleLogout = async () => {
+        await signOut(auth);
+        setUser(null);
+        setActiveProfileId(null);
     };
     
-    const handlePrepareForInterview = async (job: Job) => {
-        if (!activeProfile) return;
-        openActionModal(`Подготовка к интервью в "${job.company}"`);
-        try {
-            const result = await geminiService.getInterviewQuestions(job, activeProfile.resume);
-            setActionModalContent(result);
-        } catch (error) {
-            setActionModalContent(`Ошибка при генерации вопросов: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        } finally {
-            setIsActionLoading(false);
+    const renderModal = () => {
+        if (!isFirebaseConfigured) return null; // No modals if config is missing
+        switch (modal.type) {
+            case 'jobDetail':
+                return <JobDetailModal
+                    job={modal.job}
+                    onClose={() => setModal({ type: 'none' })}
+                    onUpdateJob={handleUpdateJob}
+                    onAdaptResume={handleAdaptResume}
+                    onGenerateEmail={handleGenerateEmail}
+                    onPrepareForInterview={handlePrepareForInterview}
+                    onAnalyzeResponse={(job) => setModal({ type: 'hrAnalysis', job })}
+                />;
+            case 'aiContent':
+                return <Modal
+                    title={modal.title}
+                    onClose={() => setModal({ type: 'none' })}
+                    isLoading={modal.isLoading}>
+                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">{modal.content}</div>
+                </Modal>;
+            case 'onboarding':
+                return <OnboardingModal
+                    onClose={() => {
+                        setModal({ type: 'none' });
+                        if(profiles.length === 0) handleAddProfile(); // Create a default if they close
+                    }}
+                    onFinish={(result) => {
+                        handleAddProfile(result);
+                        setModal({ type: 'none' });
+                    }}
+                />;
+            case 'hrAnalysis':
+                return <HrAnalysisModal 
+                    job={modal.job}
+                    onClose={() => setModal({ type: 'none' })}
+                    onAnalyze={(emailText) => handleAnalyzeHrResponse(modal.job, emailText)}
+                />;
+            default:
+                return null;
         }
     };
 
-    const handleOpenHrAnalysis = (job: Job) => {
-        setJobForHrAnalysis(job);
-    };
-
-    const handleCloseHrAnalysis = () => {
-        setJobForHrAnalysis(null);
-    };
-
-    const handleAnalyzeResponse = async (emailText: string) => {
-        if (!jobForHrAnalysis || !activeProfile) return;
-
-        handleCloseHrAnalysis();
-        openActionModal(`Анализ ответа для "${jobForHrAnalysis.title}"`);
-        setActionModalContent('Анализирую текст письма...');
-
-        try {
-            const suggestedStatus = await geminiService.analyzeHrResponse(
-                activeProfile.prompts.hrResponseAnalysis,
-                emailText
-            );
-            handleUpdateJob(jobForHrAnalysis.id, { kanbanStatus: suggestedStatus });
-            
-            setActionModalContent(`ИИ проанализировал ответ и рекомендует переместить вакансию в колонку "${kanbanStatusMap[suggestedStatus]}". Статус обновлен.`);
-
-        } catch (error) {
-             setActionModalContent(`Ошибка при анализе ответа: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        } finally {
-            setIsActionLoading(false);
-        }
-    };
-
-    const jobsForCurrentProfile = activeProfile ? jobs.filter(j => j.profileId === activeProfile.id) : [];
-
-    if (!isFirebaseConfigured()) {
+    if (!isFirebaseConfigured) {
         return <FirebaseConfigError />;
     }
-
+    
     return (
-        <AuthGuard user={user} loading={authLoading}>
-            <div className="min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans">
-                <Header
-                    theme={theme}
-                    setTheme={setTheme}
-                    view={view}
-                    setView={setView}
-                    user={user}
-                    onLogout={handleLogout}
-                />
-                <main className="container mx-auto p-4 md:p-6">
-                    {view === 'search' && (
-                        <>
-                            <SettingsPanel
-                                profiles={profiles}
-                                activeProfile={activeProfile}
-                                onAddProfile={() => setShowOnboarding(true)}
-                                onDeleteProfile={handleDeleteProfile}
-                                onSwitchProfile={setActiveProfileId}
-                                onUpdateProfile={handleUpdateProfile}
-                                onSearch={handleSearch}
-                                onExport={() => {}}
-                                onImport={() => {}}
-                                status={status}
-                                isSettingsExpanded={isSettingsExpanded}
-                                setIsSettingsExpanded={setIsSettingsExpanded}
+        <AuthGuard user={user} loading={isAuthLoading}>
+            <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-200 font-sans`}>
+                <Header theme={theme} setTheme={setTheme} view={view} setView={setView} user={user} onLogout={handleLogout} />
+                <main className="container mx-auto p-4 md:p-6 flex-1">
+                    <SettingsPanel
+                        profiles={profiles}
+                        activeProfile={activeProfile}
+                        onAddProfile={() => setModal({ type: 'onboarding' })}
+                        onDeleteProfile={handleDeleteProfile}
+                        onSwitchProfile={setActiveProfileId}
+                        onUpdateProfile={handleUpdateProfile}
+                        onSearch={handleSearch}
+                        onExport={() => {}}
+                        onImport={() => {}}
+                        status={status}
+                        isSettingsExpanded={isSettingsExpanded}
+                        setIsSettingsExpanded={setIsSettingsExpanded}
+                    />
+                    
+                    {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
+
+                    {activeProfile ? (
+                        view === 'search' ? (
+                            <JobList
+                                jobs={foundJobs}
+                                onSaveJobs={handleSaveJobs}
+                                onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
                             />
-                            {status !== AppStatus.Loading && <StatusBar status={status} message={message} />}
-                            <JobList 
-                                jobs={jobsForCurrentProfile.filter(j => j.kanbanStatus === 'new')}
-                                onJobClick={setSelectedJob} 
+                        ) : (
+                            <ApplicationTracker
+                                jobs={jobs.filter(j => j.profileId === activeProfile.id)}
+                                onUpdateJobStatus={handleUpdateJobStatus}
+                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
                             />
-                        </>
-                    )}
-                    {view === 'applications' && activeProfile && (
-                        <ApplicationTracker
-                            jobs={jobs}
-                            profiles={profiles}
-                            onUpdateJob={handleUpdateJob}
-                            onJobClick={setSelectedJob}
-                        />
+                        )
+                    ) : (
+                        <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+                            <p>Загрузка профиля...</p>
+                        </div>
                     )}
                 </main>
-
-                {selectedJob && (
-                    <JobDetailModal
-                        job={selectedJob}
-                        onClose={() => setSelectedJob(null)}
-                        onUpdateJob={handleUpdateJob}
-                        onAdaptResume={handleAdaptResume}
-                        onGenerateEmail={handleGenerateEmail}
-                        onPrepareForInterview={handlePrepareForInterview}
-                        onAnalyzeResponse={handleOpenHrAnalysis}
-                    />
-                )}
-                 {isActionModalOpen && (
-                    <Modal
-                        title={actionModalTitle}
-                        onClose={() => setIsActionModalOpen(false)}
-                        isLoading={isActionLoading}
-                    >
-                       <pre className="whitespace-pre-wrap font-sans text-sm">{actionModalContent}</pre>
-                    </Modal>
-                )}
-                {showOnboarding && user && (
-                    <OnboardingModal
-                        onFinish={handleAddProfile}
-                        onClose={() => {
-                            if (profiles.length > 0) setShowOnboarding(false);
-                        }}
-                    />
-                )}
-                 {jobForHrAnalysis && (
-                    <HrAnalysisModal
-                        job={jobForHrAnalysis}
-                        onClose={handleCloseHrAnalysis}
-                        onAnalyze={handleAnalyzeResponse}
-                    />
-                )}
+                {renderModal()}
             </div>
         </AuthGuard>
     );

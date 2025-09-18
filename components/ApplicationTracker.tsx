@@ -1,26 +1,31 @@
 import React from 'react';
-import type { Job, Profile } from '../types';
+import type { Job, KanbanStatus } from '../types';
 import KanbanBoard from './KanbanBoard';
 
 interface ApplicationTrackerProps {
     jobs: Job[];
-    profiles: Profile[];
-    onUpdateJob: (jobId: string, updates: Partial<Job>) => void;
-    onJobClick: (job: Job) => void;
+    onUpdateJobStatus: (jobId: string, newStatus: KanbanStatus) => void;
+    onViewDetails: (job: Job) => void;
 }
 
-const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, profiles, onUpdateJob, onJobClick }) => {
+const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ jobs, onUpdateJobStatus, onViewDetails }) => {
+    if (jobs.length === 0) {
+        return (
+            <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+                <h3 className="text-xl font-semibold">У вас пока нет откликов</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2">
+                    Начните поиск, чтобы найти и сохранить интересные вакансии. Они появятся здесь.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div>
-            <div className="mb-6">
-                 <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Мои Отклики</h1>
-                 <p className="text-slate-500 dark:text-slate-400">Отслеживайте свой прогресс по каждой вакансии.</p>
-            </div>
             <KanbanBoard 
                 jobs={jobs}
-                profiles={profiles}
-                onUpdateJob={onUpdateJob}
-                onJobClick={onJobClick}
+                onUpdateJobStatus={onUpdateJobStatus}
+                onViewDetails={onViewDetails}
             />
         </div>
     );
