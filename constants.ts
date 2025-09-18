@@ -39,14 +39,13 @@ export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
     skills: 'React, TypeScript, Redux',
     keywords: '',
     minCompanyRating: 0,
+    limit: 10,
     platforms: [
         { id: 'default-1', name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true, type: 'scrape' },
         { id: 'default-2', name: 'Habr Career', url: 'https://career.habr.com/vacancies', enabled: true, type: 'scrape' },
         { id: 'default-4', name: 'Avito', url: 'https://api.avito.ru', enabled: true, type: 'api' },
         { id: 'default-3', name: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/', enabled: false, type: 'scrape' },
     ],
-    // FIX: Added a default limit for API-based job searches. This resolves a type error in avitoService.
-    limit: 20,
 };
 
 export const DEFAULT_PROMPTS: Prompts = {
@@ -58,9 +57,10 @@ export const DEFAULT_PROMPTS: Prompts = {
 Вот параметры, которые пользователь хочет использовать для поиска на сайте '{platformName}':
 - Должности: '{positions}'
 - Локация: '{location}'
+- Лимит вакансий: {limit}
 
 # ШАГ 2: ИЗВЛЕЧЕНИЕ ДАННЫХ ИЗ HTML
-Ниже предоставлен HTML-код страницы, полученный по этим параметрам. Твоя задача — извлечь из него структурированную информацию о ВСЕХ найденных вакансиях.
+Ниже предоставлен HTML-код страницы, полученный по этим параметрам. Твоя задача — извлечь из него структурированную информацию о вакансиях.
 
 # ИНСТРУКЦИИ:
 1.  **Найди карточки вакансий:** Внимательно изучи HTML-структуру. Каждая вакансия обычно находится внутри div-контейнера с классом вроде 'vacancy-card--z_UXteNo7bRGzxreB0_I' или 'vacancy-item--main'.
@@ -76,7 +76,7 @@ export const DEFAULT_PROMPTS: Prompts = {
     *   **companyReviewSummary:** Оставь пустой строкой.
     *   **responsibilities:** Оставь пустым массивом [].
     *   **requirements:** Оставь пустым массивом [].
-3.  **Сформируй JSON:** Верни результат в виде JSON-массива объектов. Каждый объект должен соответствовать структуре вакансии. Не включай вакансии без названия или ссылки.
+3.  **Сформируй JSON:** Верни результат в виде JSON-массива объектов. Каждый объект должен соответствовать структуре вакансии. Не включай вакансии без названия или ссылки. Ограничь результат {limit} вакансиями.
     
 # ВАЖНО:
 -   **Точность:** Извлекай текст как есть.

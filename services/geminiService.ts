@@ -100,7 +100,8 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, settings: Se
     const prompt = promptTemplate
         .replace('{platformName}', platform.name)
         .replace('{positions}', settings.positions)
-        .replace('{location}', settings.location);
+        .replace('{location}', settings.location)
+        .replace('{limit}', String(settings.limit));
 
     const fullPrompt = `${prompt}\n${htmlContent}`;
 
@@ -406,42 +407,6 @@ export const suggestPlatforms = async (role: string, region: string): Promise<Om
     });
 
     return parseJsonResponse<Omit<Platform, 'id' | 'enabled'>[]>(resultText, 'подбора платформ');
-};
-
-export const checkJobStatus = async (jobUrl: string): Promise<'active' | 'archived'> => {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(jobUrl)}`;
-    let htmlContent: string;
-    try {
-        const response = await fetch(proxyUrl);
-        if (!response.ok) return 'active'; // Assume active if we can't fetch
-        const data = await response.json();
-        htmlContent = data.contents;
-        if (!htmlContent) return 'active';
-    } catch (error) {
-        console.error(`Error fetching job page for status check:`, error);
-        return 'active'; // Assume active on error
-    }
-
-    const resultText = await runAiOperation(async (ai) => {
-        const prompt = `
-# ЗАДАЧА: ПРОВЕРКА СТАТУСА ВАКАНСИИ
-Проанализируй HTML-код страницы. Определи, является ли вакансия все еще открытой и активной.
-- Если на странице есть явные указания, что вакансия "закрыта", "в архиве", "не найдена" (404), или "срок истек", верни слово 'archived'.
-- Во всех остальных случаях, даже если ты не уверен, верни слово 'active'.
-
-Верни ТОЛЬКО ОДНО СЛОВО: 'active' или 'archived'.
-
-# HTML-КОД ДЛЯ АНАЛИЗА:
-${htmlContent}
-        `;
-        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
-        return response.text.trim().toLowerCase();
-    });
-
-    if (resultText === 'archived') {
-        return 'archived';
-    }
-    return 'active';
 };
 
 
