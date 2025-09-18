@@ -27,6 +27,8 @@ import { SparklesIcon } from './components/icons/SparklesIcon';
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
+// FIX: Import kanbanStatusMap to resolve reference error.
+import { kanbanStatusMap } from './types';
 import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email, Interaction } from './types';
 
 import {
