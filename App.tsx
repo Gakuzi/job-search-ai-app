@@ -273,11 +273,11 @@ function App() {
         });
     }, [activeProfile, setProfiles]);
 
-    const handleAddProfile = async (initialData?: { resume: string; settings: SearchSettings }) => {
+    const handleAddProfile = async (initialData?: { resume: string; settings: SearchSettings; profileName: string; }) => {
         if (!user) return;
         const newProfileData: Omit<Profile, 'id'> = {
             userId: user.uid,
-            name: initialData ? `Профиль по резюме` : `Новый профиль ${profiles.length + 1}`,
+            name: initialData ? initialData.profileName : `Новый профиль ${profiles.length + 1}`,
             resume: initialData ? initialData.resume : DEFAULT_RESUME,
             settings: initialData ? initialData.settings : DEFAULT_SEARCH_SETTINGS,
             prompts: DEFAULT_PROMPTS,
@@ -633,13 +633,16 @@ function App() {
                     user={user} 
                     onLogout={handleLogout} 
                     onOpenSettings={() => setIsSettingsModalOpen(true)}
+                    profiles={profiles}
+                    activeProfile={activeProfile}
+                    onSwitchProfile={setActiveProfileId}
                 />
                 <main className="container mx-auto p-4 md:p-6 flex-1">
                     <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="text-center sm:text-left">
+                        <div className="flex-1 text-center sm:text-left">
                             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Панель управления поиском</h2>
                             <p className="text-sm text-slate-500 dark:text-slate-400">
-                                Активный профиль: <span className="font-semibold text-primary-500">{activeProfile?.name || '...'}</span>
+                                {activeProfile ? `Выбран профиль для поиска вакансий.` : 'Создайте или выберите профиль.'}
                             </p>
                         </div>
                          <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">

@@ -97,11 +97,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateProfile(draft => { draft.resume = value; });
     }, [onUpdateProfile]);
 
-    const handleDelete = () => {
-        if (activeProfile) {
-            onDeleteProfile(activeProfile.id);
-        }
-    };
 
     if (!isOpen || !activeProfile) return null;
 
@@ -142,29 +137,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     
                     <div className="space-y-6">
                         {activeTab === 'profiles' && (
-                             <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
+                             <div className="space-y-4">
                                 <div>
-                                    <label htmlFor="profile-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Имя активного профиля</label>
-                                    <input 
-                                        id="profile-name"
-                                        type="text"
-                                        value={profileName}
-                                        onChange={(e) => setProfileName(e.target.value)}
-                                        className="w-full input-style"
-                                    />
+                                    <h3 className="text-lg font-semibold">Управление профилями</h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Здесь вы можете переименовывать и удалять свои профили. Переключение активного профиля происходит в шапке приложения.</p>
                                 </div>
-                                <div>
-                                    <label htmlFor="profile-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Переключить/Удалить профиль</label>
-                                    <div className="flex flex-col sm:flex-row gap-2">
-                                        <select id="profile-select" value={activeProfile.id || ''} onChange={(e) => onSwitchProfile(e.target.value)} className="flex-grow w-full input-style">
-                                            {profiles.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                                        </select>
-                                        <div className="flex gap-2 w-full sm:w-auto">
-                                            <button onClick={onAddProfile} className="flex-1 sm:flex-none btn-secondary">Новый</button>
-                                            <button onClick={handleDelete} disabled={profiles.length <= 1} className="flex-1 sm:flex-none btn-danger">Удалить</button>
+                                <div className="space-y-3">
+                                    {profiles.map(p => (
+                                        <div key={p.id} className={`p-3 rounded-lg flex items-center justify-between ${p.id === activeProfile.id ? 'bg-primary-50 dark:bg-slate-800 border border-primary-500' : 'bg-slate-100 dark:bg-slate-700'}`}>
+                                            {p.id === activeProfile.id ? (
+                                                <input 
+                                                    type="text"
+                                                    value={profileName}
+                                                    onChange={(e) => setProfileName(e.target.value)}
+                                                    className="w-full bg-transparent font-semibold focus:outline-none focus:ring-0 border-0 p-0"
+                                                    aria-label="Имя активного профиля"
+                                                />
+                                            ) : (
+                                                <span className="font-semibold">{p.name}</span>
+                                            )}
+                                            <button 
+                                                onClick={() => onDeleteProfile(p.id)} 
+                                                disabled={profiles.length <= 1} 
+                                                className="text-sm font-medium text-red-500 hover:text-red-700 disabled:text-slate-400 disabled:cursor-not-allowed ml-4 flex-shrink-0"
+                                            >
+                                                Удалить
+                                            </button>
                                         </div>
-                                    </div>
+                                    ))}
                                 </div>
+                                <button onClick={onAddProfile} className="btn-secondary w-full justify-center flex items-center gap-2">
+                                    <PlusCircleIcon className="w-5 h-5"/>
+                                    Создать новый профиль через AI
+                                </button>
                             </div>
                         )}
                         {activeTab === 'platforms' && (

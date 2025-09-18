@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
+import type { Job, SearchSettings, KanbanStatus, Platform, Profile } from '../types';
 
 const getAiClient = () => {
     // Vite использует `import.meta.env` для доступа к переменным окружения
@@ -181,11 +181,11 @@ ${resumeText}
     return response.text;
 };
 
-export const generateProfileFromChat = async (chatHistory: string): Promise<{ resume: string, settings: SearchSettings }> => {
+export const generateProfileFromChat = async (chatHistory: string): Promise<{ resume: string, settings: SearchSettings, profileName: string }> => {
     const ai = getAiClient();
     const prompt = `
 Основываясь на всей истории диалога с пользователем (включая изначальный текст резюме и последующие ответы), создай его полный карьерный профиль.
-Результат должен быть строго в формате JSON-объекта с двумя ключами: "resume" и "settings".
+Результат должен быть строго в формате JSON-объекта с тремя ключами: "resume", "settings" и "profileName".
 
 1.  **resume**: Создай отполированное и хорошо структурированное резюме в формате Markdown на основе всей предоставленной информации.
 2.  **settings**: Создай объект с настройками поиска. Он должен включать поля:
@@ -200,6 +200,7 @@ export const generateProfileFromChat = async (chatHistory: string): Promise<{ re
     *   \`keywords\` (string): Пустая строка.
     *   \`minCompanyRating\` (number): 3.5.
     *   \`limit\` (number): 7.
+3.  **profileName**: Создай короткое название для профиля в формате "[Имя Фамилия] - [Основная должность] - [Зарплата] [Валюта]". Например: "Иван Иванов - Product Manager - 150000 RUB". Извлеки эти данные из резюме и созданных настроек.
 
 История диалога:
 ---
@@ -214,17 +215,14 @@ ${chatHistory}
         config: { responseMimeType: "application/json" }
     });
     
-    const parsedResult = parseJsonResponse<{ resume: string, settings: SearchSettings }>(response.text, 'создания профиля');
+    const parsedResult = parseJsonResponse<{ resume: string, settings: SearchSettings, profileName: string }>(response.text, 'создания профиля');
 
-    if (!parsedResult || !parsedResult.resume || !parsedResult.settings || !parsedResult.settings.positions) {
+    if (!parsedResult || !parsedResult.resume || !parsedResult.settings || !parsedResult.settings.positions || !parsedResult.profileName) {
         console.error("Incomplete profile data from AI:", parsedResult);
         throw new Error('ИИ вернул неполные данные для создания профиля. Убедитесь, что в диалоге была предоставлена вся информация (должность, зарплата, локация).');
     }
 
-    return {
-        resume: parsedResult.resume,
-        settings: parsedResult.settings,
-    };
+    return parsedResult;
 };
 
 export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
