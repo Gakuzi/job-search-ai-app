@@ -1,7 +1,4 @@
 
-
-
-
 // FIX: Remove reference types that cause errors when @types are not installed.
 // The global declarations below are sufficient for type checking.
 
@@ -217,11 +214,26 @@ function App() {
 
         const unsubscribeProfiles = subscribeToProfiles(user.uid, (loadedProfiles) => {
             setProfiles(loadedProfiles);
-            if (loadedProfiles.length > 0 && (!activeProfileId || !loadedProfiles.find(p => p.id === activeProfileId))) {
-                setActiveProfileId(loadedProfiles[0].id);
-            } else if (loadedProfiles.length === 0) {
+
+            if (loadedProfiles.length === 0) {
+                // Case 1: No profiles exist. Launch wizard.
                 setActiveProfileId(null);
-                 setModal({ type: 'setupWizard' });
+                setModal({ type: 'setupWizard' });
+            } else {
+                // Case 2: Profiles exist.
+                let currentActiveProfile = loadedProfiles.find(p => p.id === activeProfileId);
+
+                if (!currentActiveProfile) {
+                    // Active profile ID from storage is invalid or null, so pick the first one.
+                    currentActiveProfile = loadedProfiles[0];
+                    setActiveProfileId(currentActiveProfile.id);
+                }
+
+                // Now, check if the determined active profile is a default/placeholder one.
+                // A good heuristic for this is checking if the resume is the default template.
+                if (currentActiveProfile && currentActiveProfile.resume.trim() === DEFAULT_RESUME.trim()) {
+                    setModal({ type: 'setupWizard' });
+                }
             }
         });
 
