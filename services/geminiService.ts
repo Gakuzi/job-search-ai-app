@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
 import { getActiveApiKey, rotateApiKey } from './apiKeyService';

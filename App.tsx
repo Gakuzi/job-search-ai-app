@@ -1,4 +1,7 @@
 
+
+
+
 // FIX: Remove reference types that cause errors when @types are not installed.
 // The global declarations below are sufficient for type checking.
 
@@ -350,7 +353,7 @@ function App() {
             setFoundJobs(allResults);
             setStatus(AppStatus.Success);
              if (allResults.length > 0) {
-                setMessage(`Найдено ${allResults.length} новых релевантных вакансий с ${enabledPlatforms.length} площадок.`);
+                setMessage(`Найдено ${allResults.length} новых релевантных вакансий с ${enabledPlatforms.map(p => p.name).join(', ')}.`);
             } else {
                 setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
             }
@@ -468,7 +471,7 @@ function App() {
             const newStatus = await analyzeHrResponse(activeProfile.prompts.hrResponseAnalysis, emailText);
             handleUpdateJobStatus(job.id, newStatus);
             setStatus(AppStatus.Success);
-            setMessage(`Статус вакансии "${job.title}" обновлен на "${newStatus}".`);
+            setMessage(`Статус вакансии "${job.title}" обновлен на "${kanbanStatusMap[newStatus]}".`);
         } catch (error) {
             setStatus(AppStatus.Error);
             setMessage(error instanceof Error ? error.message : 'Произошла ошибка.');
@@ -724,6 +727,7 @@ function App() {
                         ) : (
                             <ApplicationTracker
                                 jobs={jobs.filter(j => j.profileId === activeProfile.id)}
+                                // FIX: Pass the 'profiles' prop to satisfy the ApplicationTrackerProps interface.
                                 profiles={profiles}
                                 onUpdateJobStatus={handleUpdateJobStatus}
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
@@ -737,7 +741,7 @@ function App() {
                         )
                     ) : (
                         <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                            <p>Загрузка профиля...</p>
+                             { modal.type !== 'setupWizard' && <p>Загрузка профиля...</p> }
                         </div>
                     )}
                 </main>
