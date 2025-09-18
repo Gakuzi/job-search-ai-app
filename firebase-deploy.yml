@@ -1,0 +1,55 @@
+# Имя рабочего процесса, которое будет отображаться на GitHub
+name: Deploy to Firebase Hosting
+
+# Триггер: запускать этот процесс при каждом push в ветку "main"
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  # Название задачи
+  build_and_deploy:
+    # Запускать на последней версии Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Клонирование вашего репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Установка Node.js нужной версии
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Используем стабильную LTS-версию Node.js
+
+      # 3. Установка всех зависимостей проекта
+      - name: Install Dependencies
+        run: npm install
+
+      # 4. Сборка вашего Vite-приложения
+      # Здесь мы передаем все секреты как переменные окружения,
+      # чтобы Vite мог встроить их в код приложения.
+      - name: Build project
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+
+      # 5. Развертывание собранного проекта на Firebase Hosting
+      - name: Deploy to Firebase Hosting
+        uses: w9jds/firebase-action@master
+        with:
+          # Команда для развертывания только хостинга
+          args: deploy --only hosting
+        env:
+          # Секретный ключ сервисного аккаунта для аутентификации в Firebase
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOB_SEARCH_AI }}
+          # ID вашего проекта в Firebase
+          PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
