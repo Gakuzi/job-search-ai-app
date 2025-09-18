@@ -8,9 +8,10 @@ interface ScanResultsProps {
     onSaveJobs: (jobs: Job[]) => void;
     onDismissJob: (jobId: string) => void;
     onViewDetails: (job: Job) => void;
+    onCompareJobs: (jobs: Job[]) => void;
 }
 
-const ScanResults: React.FC<ScanResultsProps> = ({ jobs, onSaveJobs, onDismissJob, onViewDetails }) => {
+const ScanResults: React.FC<ScanResultsProps> = ({ jobs, onSaveJobs, onDismissJob, onViewDetails, onCompareJobs }) => {
     const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
     const [sortConfig, setSortConfig] = useState<{ key: keyof Job | 'match'; direction: 'asc' | 'desc' } | null>(null);
 
@@ -38,6 +39,11 @@ const ScanResults: React.FC<ScanResultsProps> = ({ jobs, onSaveJobs, onDismissJo
         const jobsToSave = jobs.filter(j => selectedJobIds.has(j.id));
         onSaveJobs(jobsToSave);
         setSelectedJobIds(new Set());
+    };
+
+    const handleCompareSelected = () => {
+        const jobsToCompare = jobs.filter(j => selectedJobIds.has(j.id));
+        onCompareJobs(jobsToCompare);
     };
     
     const sortedJobs = useMemo(() => {
@@ -98,13 +104,23 @@ const ScanResults: React.FC<ScanResultsProps> = ({ jobs, onSaveJobs, onDismissJo
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md overflow-hidden">
             <div className="p-4 flex flex-col sm:flex-row justify-between items-center border-b border-slate-200 dark:border-slate-700">
                 <h3 className="text-lg font-semibold">Найдено вакансий: {jobs.length}</h3>
-                <button
-                    onClick={handleSaveSelected}
-                    disabled={selectedJobIds.size === 0}
-                    className="mt-2 sm:mt-0 px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
-                >
-                    Отслеживать выбранные ({selectedJobIds.size})
-                </button>
+                <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                    <button
+                        onClick={handleCompareSelected}
+                        disabled={selectedJobIds.size < 2 || selectedJobIds.size > 3}
+                        className="px-4 py-2 text-sm font-medium bg-slate-600 text-white rounded-md hover:bg-slate-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        title="Выберите от 2 до 3 вакансий для сравнения"
+                    >
+                        Сравнить ({selectedJobIds.size})
+                    </button>
+                    <button
+                        onClick={handleSaveSelected}
+                        disabled={selectedJobIds.size === 0}
+                        className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                    >
+                        Отслеживать ({selectedJobIds.size})
+                    </button>
+                </div>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full">

@@ -1,4 +1,5 @@
 
+
 /**
  * Retrieves the list of user-provided API keys from local storage.
  * It filters out any empty or invalid entries.
@@ -9,7 +10,8 @@ export const getApiKeys = (): string[] => {
     try {
         const keysJson = localStorage.getItem('gemini-api-keys');
         const keys = keysJson ? JSON.parse(keysJson) : [];
-        const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+        // FIX: Cast import.meta to any to access env properties without TypeScript errors.
+        const envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
 
         // User-provided keys from localStorage take precedence.
         if (Array.isArray(keys) && keys.length > 0) {
@@ -25,7 +27,8 @@ export const getApiKeys = (): string[] => {
         return [];
     } catch {
         // In case of parsing errors, fallback gracefully.
-        const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+        // FIX: Cast import.meta to any to access env properties without TypeScript errors.
+        const envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
         return envKey ? [envKey] : [];
     }
 };

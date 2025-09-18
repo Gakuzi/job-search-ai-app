@@ -5,7 +5,8 @@
 declare const gapi: any;
 declare const google: any;
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// FIX: Cast import.meta to any to access env properties without TypeScript errors.
+const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
 
 const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',

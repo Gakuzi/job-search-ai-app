@@ -1,3 +1,6 @@
+
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,6 +51,8 @@ import {
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
 import { sendEmail, listMessages } from './services/gmailService';
+import SettingsPanel from "./components/SettingsPanel";
+import JobComparisonModal from "./components/JobComparisonModal";
 
 // FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
 declare const gapi: any;
@@ -60,9 +65,11 @@ type ModalState =
     | { type: 'setupWizard' }
     | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
     | { type: 'hrAnalysis'; job: Job }
+    | { type: 'jobComparison'; jobs: Job[] }
     | { type: 'gmailScanner'; emails: Email[], analysisJobId: string | null, isLoading: boolean };
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// FIX: Cast import.meta to any to access env properties without TypeScript errors.
+const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
 
 function App() {
     const [theme, setTheme] = useTheme();
@@ -80,8 +87,11 @@ function App() {
     
     const [modal, setModal] = useImmer<ModalState>({ type: 'none' });
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    // FIX: Add state for the settings panel expansion.
+    const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
     
-    const initialGeminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    // FIX: Cast import.meta to any to access env properties without TypeScript errors.
+    const initialGeminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
     const [apiKeys, setApiKeys] = useLocalStorage<string[]>('gemini-api-keys', initialGeminiKey ? [initialGeminiKey] : []);
     const [activeApiKeyIndex, setActiveApiKeyIndex] = useLocalStorage<number>('active-api-key-index', 0);
     const [avitoApiKey, setAvitoApiKey] = useLocalStorage<string>('avito-api-key', '');
@@ -95,7 +105,7 @@ function App() {
     
     const isGoogleConnected = !!googleToken;
 
-    const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
+    const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('...');
     const isGoogleConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_');
 
     // --- Effects ---
@@ -668,6 +678,11 @@ function App() {
                     onClose={() => setModal({ type: 'none' })}
                     onAnalyze={(emailText) => handleAnalyzeHrResponse(modal.job, emailText)}
                 />;
+            case 'jobComparison':
+                return <JobComparisonModal
+                    jobs={modal.jobs}
+                    onClose={() => setModal({ type: 'none' })}
+                />;
             case 'gmailScanner':
                 return <GmailScannerModal
                     emails={modal.emails}
@@ -686,109 +701,109 @@ function App() {
         return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
     
+    // FIX: Reconstruct the missing JSX for the main application layout.
     return (
         <AuthGuard user={user} loading={isAuthLoading}>
-            <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-200 font-sans`}>
-                <Header 
-                    theme={theme} 
-                    setTheme={setTheme} 
-                    user={user} 
-                    onLogout={handleLogout} 
+            <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-50`}>
+                <Header
+                    theme={theme}
+                    setTheme={setTheme}
+                    user={user}
+                    onLogout={handleLogout}
                     onOpenSettings={() => setIsSettingsModalOpen(true)}
                     profiles={profiles}
                     activeProfile={activeProfile}
                     onSwitchProfile={setActiveProfileId}
                 />
-                <main className="container mx-auto p-4 md:p-6 flex-1">
-                    <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="flex-1 text-center sm:text-left">
-                            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Панель управления поиском</h2>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">
-                                {activeProfile ? `Выбран профиль для поиска вакансий.` : 'Создайте или выберите профиль.'}
-                            </p>
-                        </div>
-                         <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                            <button onClick={() => setView('scanResults')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'scanResults' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
-                                Результаты сканирования
-                            </button>
-                            <button onClick={() => setView('applications')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'applications' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
-                                Отклики
-                            </button>
-                        </div>
+
+                <main className="container mx-auto px-4 md:px-6 py-6 flex-grow w-full">
+                    <SettingsPanel
+                        profiles={profiles}
+                        activeProfile={activeProfile}
+                        onAddProfile={() => handleAddProfile()}
+                        onDeleteProfile={handleDeleteProfile}
+                        onSwitchProfile={setActiveProfileId}
+                        onUpdateProfile={handleUpdateProfile}
+                        onSearch={handleSearch}
+                        status={status}
+                        isSettingsExpanded={isSettingsExpanded}
+                        setIsSettingsExpanded={setIsSettingsExpanded}
+                        googleUser={googleUser}
+                        isGoogleConnected={isGoogleConnected}
+                        onGoogleSignIn={handleGoogleSignIn}
+                        onGoogleSignOut={handleGoogleSignOut}
+                    />
+
+                    <StatusBar status={status} message={message} />
+
+                    <div className="flex justify-center mb-4 border-b border-slate-200 dark:border-slate-700">
                         <button
-                            onClick={handleSearch}
-                            disabled={status === AppStatus.Loading || !activeProfile}
-                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                            onClick={() => setView('applications')}
+                            className={`px-6 py-3 font-medium border-b-2 ${view === 'applications' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                         >
-                            {status === AppStatus.Loading ? (
-                                <>
-                                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-                                 Поиск...
-                                </>
-                            ) : (
-                                <>
-                                <SparklesIcon className="w-5 h-5" />
-                                Найти вакансии с ИИ
-                                </>
-                            )}
+                            Мои Отклики
+                        </button>
+                        <button
+                            onClick={() => setView('scanResults')}
+                            className={`px-6 py-3 font-medium border-b-2 ${view === 'scanResults' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                            Результаты ({foundJobs.length})
                         </button>
                     </div>
-                    
-                    {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
 
-                    {activeProfile ? (
-                        view === 'scanResults' ? (
-                            <ScanResults
-                                jobs={foundJobs}
-                                onSaveJobs={handleSaveScannedJobs}
-                                onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
-                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
-                            />
-                        ) : (
-                            <ApplicationTracker
-                                jobs={jobs.filter(j => j.profileId === activeProfile.id)}
-                                profiles={profiles}
-                                onUpdateJobStatus={handleUpdateJobStatus}
-                                onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
-                                onAdaptResume={handleAdaptResume}
-                                onGenerateEmail={handleGenerateEmail}
-                                onQuickApplyEmail={handleQuickApplyFromCard}
-                                isGoogleConnected={isGoogleConnected}
-                                isGapiReady={isGapiReady}
-                                onScanReplies={handleOpenGmailScanner}
-                            />
-                        )
+                    <div className="mt-6">
+                    {view === 'applications' ? (
+                        <ApplicationTracker
+                            jobs={jobs.filter(j => j.profileId === activeProfile?.id)}
+                            profiles={profiles}
+                            onUpdateJobStatus={handleUpdateJobStatus}
+                            onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                            onAdaptResume={handleAdaptResume}
+                            onGenerateEmail={handleGenerateEmail}
+                            onQuickApplyEmail={handleQuickApplyFromCard}
+                            isGoogleConnected={isGoogleConnected}
+                            isGapiReady={isGapiReady}
+                            onScanReplies={handleOpenGmailScanner}
+                        />
                     ) : (
-                        <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                             { modal.type !== 'setupWizard' && <p>Загрузка профиля...</p> }
-                        </div>
+                        <ScanResults
+                            jobs={foundJobs}
+                            onSaveJobs={handleSaveScannedJobs}
+                            onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
+                            onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
+                            onCompareJobs={(jobs) => setModal({ type: 'jobComparison', jobs })}
+                        />
                     )}
+                    </div>
                 </main>
-                
-                <SettingsModal
-                    isOpen={isSettingsModalOpen}
-                    onClose={() => setIsSettingsModalOpen(false)}
-                    profiles={profiles}
-                    activeProfile={activeProfile}
-                    onAddProfile={handleOpenOnboarding}
-                    onDeleteProfile={handleDeleteProfile}
-                    onSwitchProfile={setActiveProfileId}
-                    onUpdateProfile={handleUpdateProfile}
-                    googleUser={googleUser}
-                    isGoogleConnected={isGoogleConnected}
-                    onGoogleSignIn={handleGoogleSignIn}
-                    onGoogleSignOut={handleGoogleSignOut}
-                    apiKeys={apiKeys}
-                    setApiKeys={setApiKeys}
-                    activeApiKeyIndex={activeApiKeyIndex}
-                    setActiveApiKeyIndex={setActiveApiKeyIndex}
-                    avitoApiKey={avitoApiKey}
-                    setAvitoApiKey={setAvitoApiKey}
-                />
+
                 {renderModal()}
+                {isSettingsModalOpen && (
+                    <SettingsModal
+                        isOpen={isSettingsModalOpen}
+                        onClose={() => setIsSettingsModalOpen(false)}
+                        profiles={profiles}
+                        activeProfile={activeProfile}
+                        onAddProfile={handleOpenOnboarding}
+                        onDeleteProfile={handleDeleteProfile}
+                        onSwitchProfile={setActiveProfileId}
+                        onUpdateProfile={handleUpdateProfile}
+                        googleUser={googleUser}
+                        isGoogleConnected={isGoogleConnected}
+                        onGoogleSignIn={handleGoogleSignIn}
+                        onGoogleSignOut={handleGoogleSignOut}
+                        apiKeys={apiKeys}
+                        setApiKeys={setApiKeys}
+                        activeApiKeyIndex={activeApiKeyIndex}
+                        setActiveApiKeyIndex={setActiveApiKeyIndex}
+                        avitoApiKey={avitoApiKey}
+                        setAvitoApiKey={setAvitoApiKey}
+                    />
+                )}
             </div>
         </AuthGuard>
     );
 }
 
+// FIX: Add default export to the App component to resolve the module import error.
 export default App;
