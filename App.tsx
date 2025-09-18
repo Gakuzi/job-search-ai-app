@@ -1,3 +1,4 @@
+
 // FIX: Remove reference types that cause errors when @types are not installed.
 // The global declarations below are sufficient for type checking.
 
@@ -82,6 +83,11 @@ function App() {
     
     const [modal, setModal] = useState<ModalState>({ type: 'none' });
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    
+    const initialGeminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const [apiKeys, setApiKeys] = useLocalStorage<string[]>('gemini-api-keys', initialGeminiKey ? [initialGeminiKey] : []);
+    const [activeApiKeyIndex, setActiveApiKeyIndex] = useLocalStorage<number>('active-api-key-index', 0);
+
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
@@ -718,6 +724,10 @@ function App() {
                     isGoogleConnected={isGoogleConnected}
                     onGoogleSignIn={handleGoogleSignIn}
                     onGoogleSignOut={handleGoogleSignOut}
+                    apiKeys={apiKeys}
+                    setApiKeys={setApiKeys}
+                    activeApiKeyIndex={activeApiKeyIndex}
+                    setActiveApiKeyIndex={setActiveApiKeyIndex}
                 />
                 {renderModal()}
             </div>

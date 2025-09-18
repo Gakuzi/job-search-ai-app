@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Profile, GoogleUser, Platform } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
@@ -8,9 +9,13 @@ import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { LinkIcon } from './icons/LinkIcon';
 import { UserGroupIcon } from './icons/UserGroupIcon';
 import { PlusCircleIcon } from './icons/PlusCircleIcon';
+import { KeyIcon } from './icons/KeyIcon';
 import GmailConnect from './GmailConnect';
+import { testApiKey } from '../services/geminiService';
 
-type SettingsTab = 'profiles' | 'search' | 'resume' | 'integrations' | 'platforms';
+type SettingsTab = 'profiles' | 'search' | 'resume' | 'integrations' | 'platforms' | 'apiKeys';
+type KeyTestStatus = 'testing' | 'valid' | 'invalid' | 'idle';
+
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -25,6 +30,10 @@ interface SettingsModalProps {
     isGoogleConnected: boolean;
     onGoogleSignIn: () => void;
     onGoogleSignOut: () => void;
+    apiKeys: string[];
+    setApiKeys: React.Dispatch<React.SetStateAction<string[]>>;
+    activeApiKeyIndex: number;
+    setActiveApiKeyIndex: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -40,10 +49,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     isGoogleConnected,
     onGoogleSignIn,
     onGoogleSignOut,
+    apiKeys,
+    setApiKeys,
+    activeApiKeyIndex,
+    setActiveApiKeyIndex,
 }) => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('profiles');
     const [profileName, setProfileName] = useState(activeProfile?.name || '');
     const debouncedProfileName = useDebounce(profileName, 500);
+    const [keyTestStatus, setKeyTestStatus] = useState<Record<number, KeyTestStatus>>({});
 
     useEffect(() => {
         if (activeProfile) {
@@ -97,6 +111,47 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateProfile(draft => { draft.resume = value; });
     }, [onUpdateProfile]);
 
+    const handleKeyChange = (index: number, value: string) => {
+        setApiKeys(currentKeys => {
+            const newKeys = [...currentKeys];
+            newKeys[index] = value;
+            return newKeys;
+        });
+        setKeyTestStatus(s => ({...s, [index]: 'idle'}));
+    };
+
+    const handleAddKey = () => {
+        setApiKeys(currentKeys => [...currentKeys, '']);
+    };
+
+    const handleRemoveKey = (indexToRemove: number) => {
+        setApiKeys(currentKeys => currentKeys.filter((_, i) => i !== indexToRemove));
+        if (activeApiKeyIndex >= apiKeys.length - 1 || activeApiKeyIndex === indexToRemove) {
+            setActiveApiKeyIndex(0);
+        }
+        setKeyTestStatus(s => {
+            const newStatus = {...s};
+            delete newStatus[indexToRemove];
+            return newStatus;
+        })
+    };
+    
+    const handleTestKey = async (index: number, key: string) => {
+        if (!key) return;
+        setKeyTestStatus(s => ({ ...s, [index]: 'testing' }));
+        const isValid = await testApiKey(key);
+        setKeyTestStatus(s => ({ ...s, [index]: isValid ? 'valid' : 'invalid' }));
+    };
+    
+    const getStatusIndicator = (status: KeyTestStatus) => {
+        switch(status) {
+            case 'testing': return <div className="w-4 h-4 rounded-full bg-yellow-400 animate-pulse" title="Тестирование..."></div>;
+            case 'valid': return <div className="w-4 h-4 rounded-full bg-green-500" title="Ключ действителен"></div>;
+            case 'invalid': return <div className="w-4 h-4 rounded-full bg-red-500" title="Ключ недействителен"></div>;
+            default: return <div className="w-4 h-4 rounded-full bg-slate-300 dark:bg-slate-600" title="Статус неизвестен"></div>;
+        }
+    };
+
 
     if (!isOpen || !activeProfile) return null;
 
@@ -129,6 +184,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
                     <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
                         <TabButton tabId="profiles" label="Профили" icon={<UserGroupIcon className="w-4 h-4" />}/>
+                        <TabButton tabId="apiKeys" label="API Ключи" icon={<KeyIcon className="w-4 h-4" />}/>
                         <TabButton tabId="platforms" label="Платформы" icon={<svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0112 13.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253M18.716 14.253A9.004 9.004 0 0112 21c-2.485 0-4.5-4.03-4.5-9s2.015-9 4.5-9 4.5 4.03 4.5 9" /></svg>}/>
                         <TabButton tabId="search" label="Параметры" icon={<BriefcaseIcon className="w-4 h-4" />}/>
                         <TabButton tabId="resume" label="Резюме" icon={<PencilSquareIcon className="w-4 h-4" />}/>
@@ -169,6 +225,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <button onClick={onAddProfile} className="btn-secondary w-full justify-center flex items-center gap-2">
                                     <PlusCircleIcon className="w-5 h-5"/>
                                     Создать новый профиль через AI
+                                </button>
+                            </div>
+                        )}
+                         {activeTab === 'apiKeys' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-lg font-semibold">Пул API ключей Gemini</h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Добавьте несколько API ключей. Если один из них исчерпает дневной лимит, система автоматически переключится на следующий. Активный ключ подсвечен синим.</p>
+                                </div>
+                                <div className="space-y-3">
+                                    {apiKeys.map((key, index) => (
+                                        <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${index === activeApiKeyIndex ? 'bg-blue-50 dark:bg-slate-800 border border-blue-500' : 'bg-slate-100 dark:bg-slate-700'}`}>
+                                            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{index + 1}.</span>
+                                            <input 
+                                                type="text"
+                                                value={key}
+                                                onChange={(e) => handleKeyChange(index, e.target.value)}
+                                                placeholder="Вставьте ваш Gemini API ключ"
+                                                className="w-full input-style font-mono text-sm"
+                                            />
+                                            {getStatusIndicator(keyTestStatus[index] || 'idle')}
+                                            <button onClick={() => handleTestKey(index, key)} className="btn-secondary text-sm" disabled={keyTestStatus[index] === 'testing'}>
+                                                {keyTestStatus[index] === 'testing' ? '...' : 'Тест'}
+                                            </button>
+                                            <button onClick={() => handleRemoveKey(index)} className="btn-danger text-sm">
+                                                Удалить
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={handleAddKey} className="btn-secondary flex items-center gap-2">
+                                    <PlusCircleIcon className="w-5 h-5"/>
+                                    Добавить ключ
                                 </button>
                             </div>
                         )}
