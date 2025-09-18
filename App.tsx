@@ -1,5 +1,7 @@
 // FIX: Add references for GAPI and Google Accounts to resolve type errors.
 /// <reference types="gapi" />
+// FIX: Add gapi.client types reference to resolve issues with gapi.client
+/// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -97,18 +99,66 @@ function App() {
         return () => unsubscribe();
     }, []);
 
-    useEffect(() => {
-        // Initialize Google API clients
-        const initialize = async () => {
-            await gapiLoad('client:oauth2');
-            await initGapiClient();
-            setIsGapiReady(true);
-            setTokenClient(initTokenClient(handleGoogleAuthResponse));
-        };
-        if (isGoogleConfigured) {
-           initialize();
+    const handleGoogleAuthResponse = useCallback(async (tokenResponse: google.accounts.oauth2.TokenResponse) => {
+        if (tokenResponse.access_token) {
+            try {
+                const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { 'Authorization': `Bearer ${tokenResponse.access_token}` }
+                });
+                const userInfo = await response.json();
+                setGoogleUser({
+                    name: userInfo.name,
+                    email: userInfo.email,
+                    picture: userInfo.picture,
+                });
+            } catch (error) {
+                console.error("Failed to fetch Google user info:", error);
+                setStatus(AppStatus.Error);
+                setMessage("Не удалось получить информацию о пользователе Google.");
+            }
         }
-    }, [isGoogleConfigured]);
+    }, [setGoogleUser]);
+
+    useEffect(() => {
+        // This effect handles the initialization of Google API clients,
+        // ensuring the external scripts are loaded before use to prevent a race condition.
+        if (!isGoogleConfigured) {
+            return;
+        }
+    
+        const scriptLoadCheckInterval = setInterval(async () => {
+            // Wait until both the GAPI (for Gmail API) and GSI (for Sign-In) scripts have loaded.
+            if (window.gapi && window.google) {
+                clearInterval(scriptLoadCheckInterval);
+                try {
+                    await gapiLoad('client:oauth2');
+                    await initGapiClient();
+                    setIsGapiReady(true);
+                    setTokenClient(initTokenClient(handleGoogleAuthResponse));
+                } catch (error) {
+                    console.error("Failed to initialize Google Auth clients:", error);
+                    setStatus(AppStatus.Error);
+                    setMessage("Не удалось инициализировать сервисы Google. Проверьте консоль.");
+                }
+            }
+        }, 150); // Check every 150ms for the scripts.
+    
+        // Set a timeout to prevent the interval from running indefinitely if scripts fail to load.
+        const timeout = setTimeout(() => {
+            clearInterval(scriptLoadCheckInterval);
+            if (!window.gapi || !window.google) {
+                console.error("Google API scripts failed to load within 5 seconds.");
+                setStatus(AppStatus.Error);
+                setMessage("Не удалось загрузить скрипты Google. Проверьте интернет-соединение и отключите блокировщики рекламы, затем обновите страницу.");
+            }
+        }, 5000); // 5-second timeout.
+    
+        // Cleanup function to clear the interval and timeout when the component unmounts.
+        return () => {
+            clearInterval(scriptLoadCheckInterval);
+            clearTimeout(timeout);
+        };
+    }, [isGoogleConfigured, handleGoogleAuthResponse]);
 
 
     useEffect(() => {
@@ -141,26 +191,6 @@ function App() {
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
     
     // --- Google Auth Handlers ---
-    
-    const handleGoogleAuthResponse = useCallback(async (tokenResponse: google.accounts.oauth2.TokenResponse) => {
-        if (tokenResponse.access_token) {
-            try {
-                const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                    headers: { 'Authorization': `Bearer ${tokenResponse.access_token}` }
-                });
-                const userInfo = await response.json();
-                setGoogleUser({
-                    name: userInfo.name,
-                    email: userInfo.email,
-                    picture: userInfo.picture,
-                });
-            } catch (error) {
-                console.error("Failed to fetch Google user info:", error);
-                setStatus(AppStatus.Error);
-                setMessage("Не удалось получить информацию о пользователе Google.");
-            }
-        }
-    }, [setGoogleUser]);
     
     const handleGoogleSignIn = () => {
         if (tokenClient) {

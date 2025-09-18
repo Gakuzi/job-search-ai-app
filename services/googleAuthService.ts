@@ -1,5 +1,7 @@
 // FIX: Add references for GAPI and Google Accounts to resolve type errors.
 /// <reference types="gapi" />
+// FIX: Add gapi.client types reference to resolve issues with gapi.client
+/// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;

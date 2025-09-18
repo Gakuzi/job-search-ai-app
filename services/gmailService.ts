@@ -1,5 +1,7 @@
 // FIX: Add reference for GAPI to resolve gapi.client type errors.
 /// <reference types="gapi" />
+// FIX: Add gapi.client types reference to resolve issues with gapi.client
+/// <reference types="gapi.client" />
 
 import type { GmailThread, GmailMessage } from "../types";
 
