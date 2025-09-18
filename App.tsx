@@ -1,5 +1,4 @@
 
-
 // FIX: Remove reference types that cause errors when @types are not installed.
 // The global declarations below are sufficient for type checking.
 
@@ -17,7 +16,7 @@ import JobList from './components/JobList';
 import ApplicationTracker from './components/ApplicationTracker';
 import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
-import OnboardingModal from './components/OnboardingModal';
+import SetupWizardModal from './components/SetupWizardModal';
 import JobDetailModal from './components/JobDetailModal';
 import HrAnalysisModal from './components/HrAnalysisModal';
 import GmailScannerModal from './components/GmailScannerModal';
@@ -61,7 +60,7 @@ type View = 'search' | 'applications';
 type ModalState =
     | { type: 'none' }
     | { type: 'jobDetail'; job: Job }
-    | { type: 'onboarding' }
+    | { type: 'setupWizard' }
     | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
     | { type: 'hrAnalysis'; job: Job }
     | { type: 'gmailScanner'; emails: Email[], analysisJobId: string | null, isLoading: boolean };
@@ -219,7 +218,7 @@ function App() {
                 setActiveProfileId(loadedProfiles[0].id);
             } else if (loadedProfiles.length === 0) {
                 setActiveProfileId(null);
-                 setModal({ type: 'onboarding' });
+                 setModal({ type: 'setupWizard' });
             }
         });
 
@@ -294,7 +293,7 @@ function App() {
 
     const handleOpenOnboarding = () => {
         setIsSettingsModalOpen(false);
-        setModal({ type: 'onboarding' });
+        setModal({ type: 'setupWizard' });
     }
 
     const handleDeleteProfile = async (id: string) => {
@@ -627,8 +626,8 @@ function App() {
                     isLoading={modal.isLoading}>
                     <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">{modal.content}</div>
                 </Modal>;
-            case 'onboarding':
-                return <OnboardingModal
+            case 'setupWizard':
+                return <SetupWizardModal
                     onClose={() => {
                         setModal({ type: 'none' });
                         if(profiles.length === 0) handleAddProfile();

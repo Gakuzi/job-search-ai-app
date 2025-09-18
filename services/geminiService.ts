@@ -1,6 +1,4 @@
 
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
 import { getActiveApiKey, rotateApiKey } from './apiKeyService';
@@ -232,74 +230,59 @@ ${resume}
     });
 }
 
-export const analyzeResumeAndAskQuestions = async (resumeText: string): Promise<string> => {
-    return runAiOperation(async (ai) => {
+export const extractProfileDataFromResume = async (resumeText: string): Promise<{ settings: Partial<SearchSettings>, profileName: string }> => {
+    const resultText = await runAiOperation(async (ai) => {
         const prompt = `
-Действуй как дружелюбный AI-ассистент по карьере. Твоя задача - проанализировать текст резюме и определить, достаточно ли в нем информации для качественного поиска работы.
-Ключевая информация, которая тебе нужна:
-1.  **Желаемые должности** (например, "руководитель проекта", "CEO").
-2.  **Желаемая минимальная зарплата** (в рублях или другой валюте).
-3.  **Предпочитаемая локация** (город или "удаленно").
+# ЗАДАЧА: АНАЛИЗ РЕЗЮМЕ ДЛЯ НАСТРОЙКИ ПРОФИЛЯ
+Проанализируй текст резюме и извлеки из него ключевую информацию для создания поискового профиля.
+Результат должен быть строго в формате JSON-объекта с двумя ключами: "settings" и "profileName".
 
-Проанализируй текст ниже.
--   Если ВСЯ ключевая информация присутствует, ответь ОДНИМ СЛОВОМ: **READY**.
--   Если чего-то не хватает, задай ОДИН вежливый и короткий уточняющий вопрос, чтобы получить недостающую информацию. Спрашивай только о том, чего действительно нет.
+1.  **settings**: Объект с настройками поиска. Извлеки следующие поля из текста:
+    *   \`positions\` (string): Желаемые должности. Если неясно, возьми последнюю должность.
+    *   \`salary\` (number): Желаемая зарплата. Если не указана, поставь 0.
+    *   \`currency\` (string): 'RUB', 'USD', или 'EUR'. Если не указана, используй 'RUB'.
+    *   \`location\` (string): Город.
+    *   \`skills\` (string): Ключевые навыки и технологии через запятую.
+
+2.  **profileName**: Создай короткое название для профиля в формате "[Имя Фамилия] - [Основная должность]". Извлеки имя и должность из резюме.
 
 Текст резюме для анализа:
 ---
 ${resumeText}
 ---
-`;
-        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
-        return response.text;
-    });
-};
 
-export const generateProfileFromChat = async (chatHistory: string): Promise<{ resume: string, settings: SearchSettings, profileName: string }> => {
-    const resultText = await runAiOperation(async (ai) => {
-        const prompt = `
-Основываясь на всей истории диалога с пользователем (включая изначальный текст резюме и последующие ответы), создай его полный карьерный профиль.
-Результат должен быть строго в формате JSON-объекта с тремя ключами: "resume", "settings" и "profileName".
-
-1.  **resume**: Создай отполированное и хорошо структурированное резюме в формате Markdown на основе всей предоставленной информации.
-2.  **settings**: Создай объект с настройками поиска. Он должен включать поля:
-    *   \`positions\` (string): Желаемые должности через запятую.
-    *   \`salary\` (number): Минимальная желаемая зарплата.
-    *   \`currency\` (string): 'RUB', 'USD', или 'EUR', определи из контекста. По умолчанию 'RUB'.
-    *   \`location\` (string): Город или "Удаленно".
-    *   \`remote\` (boolean): true, если пользователь ищет удаленную работу.
-    *   \`employment\` (array of strings): ["полная занятость", "проектная работа"].
-    *   \`schedule\` (array of strings): ["полный день", "гибкий график"].
-    *   \`skills\` (string): Ключевые навыки и технологии из резюме через запятую.
-    *   \`keywords\` (string): Пустая строка.
-    *   \`minCompanyRating\` (number): 3.5.
-    *   \`limit\` (number): 7.
-3.  **profileName**: Создай короткое название для профиля в формате "[Имя Фамилия] - [Основная должность] - [Зарплата] [Валюта]". Например: "Иван Иванов - Product Manager - 150000 RUB". Извлеки эти данные из резюме и созданных настроек.
-
-История диалога:
----
-${chatHistory}
----
-
-Верни только JSON-объект и ничего больше.
+Верни только JSON-объект и ничего больше. Если какое-то поле не найдено, установи для него значение по умолчанию (пустая строка для строк, 0 для чисел).
 `;
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: { responseMimeType: "application/json" }
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        settings: {
+                            type: Type.OBJECT,
+                            properties: {
+                                positions: { type: Type.STRING },
+                                salary: { type: Type.NUMBER },
+                                currency: { type: Type.STRING },
+                                location: { type: Type.STRING },
+                                skills: { type: Type.STRING }
+                            }
+                        },
+                        profileName: { type: Type.STRING }
+                    },
+                    required: ["settings", "profileName"]
+                }
+            }
         });
         return response.text;
     });
     
-    const parsedResult = parseJsonResponse<{ resume: string, settings: SearchSettings, profileName: string }>(resultText, 'создания профиля');
-
-    if (!parsedResult || !parsedResult.resume || !parsedResult.settings || !parsedResult.settings.positions || !parsedResult.profileName) {
-        console.error("Incomplete profile data from AI:", parsedResult);
-        throw new Error('ИИ вернул неполные данные для создания профиля. Убедитесь, что в диалоге была предоставлена вся информация (должность, зарплата, локация).');
-    }
-
-    return parsedResult;
+    return parseJsonResponse<{ settings: Partial<SearchSettings>, profileName: string }>(resultText, 'анализа резюме');
 };
+
 
 export const analyzeHrResponse = async (promptTemplate: string, emailText: string): Promise<KanbanStatus> => {
     const result = await runAiOperation(async (ai) => {
