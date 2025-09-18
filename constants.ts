@@ -1,32 +1,29 @@
-import type { Prompts, SearchSettings } from './types';
+import { v4 as uuidv4 } from 'uuid';
+import type { SearchSettings, Prompts } from './types';
 
-// FIX: This file contained raw text instead of TypeScript code. It has been rewritten to be a valid module that exports the required constants for the application.
 export enum AppStatus {
-    Idle = 'idle',
-    Loading = 'loading',
-    Success = 'success',
-    Error = 'error',
+    Idle = 'Idle',
+    Loading = 'Loading',
+    Success = 'Success',
+    Error = 'Error',
 }
 
-export const DEFAULT_RESUME = `
-# Имя Фамилия
-Frontend-разработчик
+export const DEFAULT_RESUME = `[ВАШЕ ИМЯ]
+[Контактная информация: телефон, email, ссылка на портфолио/LinkedIn]
 
-## Контакты
-- Email: your.email@example.com
-- Telegram: @your_telegram
-- GitHub: github.com/your_github
+ОПЫТ РАБОТЫ
+[Название компании], [Город] — [Должность]
+[ММ.ГГГГ] - [ММ.ГГГГ]
+- [Ключевое достижение 1]
+- [Ключевое достижение 2]
 
-## Опыт работы
-**Frontend Developer** | Awesome Company | 2021 - н.в.
-- Разработка и поддержка пользовательских интерфейсов с использованием React, Redux и TypeScript.
-- Участие в проектировании архитектуры фронтенд-приложений.
+НАВЫКИ
+- [Навык 1]
+- [Навык 2]
 
-## Навыки
-- **Языки:** JavaScript, TypeScript, HTML5, CSS3
-- **Фреймворки:** React, Next.js
-- **Инструменты:** Webpack, Git, Jest, Docker
-`.trim();
+ОБРАЗОВАНИЕ
+[Название учебного заведения], [Город]
+[Специальность], [Год окончания]`;
 
 export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
     positions: 'Frontend-разработчик',
@@ -35,88 +32,42 @@ export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
     location: 'Москва',
     remote: true,
     employment: ['full'],
-    schedule: ['fullDay'],
-    skills: 'React, TypeScript, Redux',
+    schedule: ['fullDay', 'remote'],
+    skills: 'React, TypeScript, JavaScript',
     keywords: '',
-    minCompanyRating: 0,
+    minCompanyRating: 3.5,
     platforms: [
-        { id: 'default-1', name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true, type: 'scrape' },
-        { id: 'default-2', name: 'Habr Career', url: 'https://career.habr.com/vacancies', enabled: true, type: 'scrape' },
-        { id: 'default-4', name: 'Avito', url: 'https://api.avito.ru', enabled: true, type: 'api' },
-        { id: 'default-3', name: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/', enabled: false, type: 'scrape' },
+        { id: uuidv4(), name: 'HeadHunter', url: 'https://hh.ru/search/vacancy', enabled: true, type: 'scrape' },
+        { id: uuidv4(), name: 'Habr Career', url: 'https://career.habr.com/vacancies', enabled: true, type: 'scrape' },
+        { id: uuidv4(), name: 'LinkedIn', url: 'https://www.linkedin.com/jobs/search/', enabled: false, type: 'scrape' },
+        { id: uuidv4(), name: 'Avito', url: 'https://www.avito.ru/all/rabota', enabled: false, type: 'api' },
     ],
-    // FIX: Added a default limit for API-based job searches. This resolves a type error in avitoService.
-    limit: 20,
+    limit: 10,
 };
 
 export const DEFAULT_PROMPTS: Prompts = {
-    jobSearch: `
-# ЗАДАЧА: ПОИСК И ИЗВЛЕЧЕНИЕ ВАКАНСИЙ С САЙТА
-Ты — AI-ассистент, твоя задача — выступить в роли умного парсера для сайта по поиску работы. Ты должен проанализировать параметры поиска, предоставленные пользователем, и затем извлечь релевантную информацию из HTML-кода страницы с результатами поиска.
-
-# ШАГ 1: АНАЛИЗ ПАРАМЕТРОВ (для твоего понимания)
-Вот параметры, которые пользователь хочет использовать для поиска на сайте '{platformName}':
-- Должности: '{positions}'
-- Локация: '{location}'
-
-# ШАГ 2: ИЗВЛЕЧЕНИЕ ДАННЫХ ИЗ HTML
-Ниже предоставлен HTML-код страницы, полученный по этим параметрам. Твоя задача — извлечь из него структурированную информацию о ВСЕХ найденных вакансиях.
-
-# ИНСТРУКЦИИ:
-1.  **Найди карточки вакансий:** Внимательно изучи HTML-структуру. Каждая вакансия обычно находится внутри div-контейнера с классом вроде 'vacancy-card--z_UXteNo7bRGzxreB0_I' или 'vacancy-item--main'.
-2.  **Извлеки данные для каждой вакансии:**
-    *   **title:** Название вакансии.
-    *   **company:** Название компании.
-    *   **salary:** Зарплата. Если не указана, верни "не указана".
-    *   **location:** Город или регион.
-    *   **description:** Краткое описание или требования.
-    *   **url:** Полная, абсолютная ссылка на вакансию.
-    *   **contacts:** Постарайся найти контактные данные (email, phone, telegram). Если нет, не включай это поле.
-    *   **companyRating:** Оставь 0.
-    *   **companyReviewSummary:** Оставь пустой строкой.
-    *   **responsibilities:** Оставь пустым массивом [].
-    *   **requirements:** Оставь пустым массивом [].
-3.  **Сформируй JSON:** Верни результат в виде JSON-массива объектов. Каждый объект должен соответствовать структуре вакансии. Не включай вакансии без названия или ссылки.
+    jobSearch: `Analyze the provided HTML content from the job search results page of {platformName}. 
+Your task is to extract job listings based on the user's query for "{positions}" in "{location}". 
+For each job found, extract the following details: title, company, companyRating (if available, otherwise 0), companyReviewSummary (if available), salary (as a string), location, a brief description, responsibilities (as an array of strings), requirements (as an array of strings), the direct URL to the job posting, and contact information (email, phone, telegram if available).
+Return the result as a JSON array of objects. Ensure the JSON is well-formed and contains only the extracted data. Do not include any jobs that are clearly irrelevant.`,
     
-# ВАЖНО:
--   **Точность:** Извлекай текст как есть.
--   **Формат:** Вывод должен быть СТРОГО JSON-массивом, без комментариев или \`\`\`json ... \`\`\` оберток.
--   **Ошибки:** Если HTML не содержит вакансий, верни пустой массив \`[]\`.
+    resumeAdapt: `You are an expert career coach. Your task is to adapt the user's base resume to perfectly match the requirements of a specific job application for the position of "{jobTitle}" at "{jobCompany}".
+Analyze the provided base resume and the job description. Rewrite and tailor the resume to highlight the most relevant skills, experiences, and achievements. Focus on using keywords from the job description. The output should be a complete, ready-to-use resume in plain text format. Do not include any conversational text, just the resume content itself.`,
 
-# HTML-КОД ДЛЯ ПАРСИНГА:
-`.trim(),
-    resumeAdapt: `
-# ЗАДАЧА: АДАПТАЦИЯ РЕЗЮМЕ ПОД ВАКАНСИЮ
-Ты — карьерный консультант. Твоя задача — помочь соискателю адаптировать его базовое резюме под конкретную вакансию.
-Сделай акцент на тех навыках и опыте, которые наиболее релевантны для позиции '{jobTitle}' в компании '{jobCompany}'.
-Сохрани структуру и формат Markdown. Будь кратким и по делу.
-`.trim(),
-    coverLetter: `
-# ЗАДАЧА: СОСТАВЛЕНИЕ СОПРОВОДИТЕЛЬНОГО ПИСЬМА
-Ты — AI-копирайтер. Напиши сопроводительное письмо для отклика на вакансию '{jobTitle}' в компанию '{jobCompany}'.
-Письмо должно быть вежливым, профессиональным и кратким (3-4 абзаца).
-Выдели ключевые навыки кандидата, которые соответствуют требованиям вакансии.
-Верни результат в формате JSON с двумя ключами: "subject" (тема письма) и "body" (тело письма).
-`.trim(),
-    hrResponseAnalysis: `
-# ЗАДАЧА: АНАЛИЗ ОТВЕТА ОТ HR
-Проанализируй текст письма от HR. Определи его суть и верни ОДНО из следующих ключевых слов, которое лучше всего описывает статус:
-- 'interview': Если в письме есть приглашение на собеседование (любой этап).
-- 'offer': Если это предложение о работе.
-- 'archive': Если это отказ.
-- 'tracking': Если это нейтральный ответ, подтверждение получения резюме или просьба подождать.
-Верни только одно слово и ничего больше.
+    coverLetter: `You are a professional copywriter specializing in job applications. Write a compelling and concise cover letter for the position of "{jobTitle}" at "{jobCompany}".
+The output must be a well-formed JSON object with two keys: "subject" and "body".
+The "subject" should be an engaging email subject line.
+The "body" should be the email content. It should be persuasive, tailored to the job description, and highlight the candidate's key qualifications. Keep it professional and concise.`,
 
-## Текст письма для анализа:
-`.trim(),
-    shortMessage: `
-# ЗАДАЧА: КОРОТКОЕ СООБЩЕНИЕ ДЛЯ МЕССЕНДЖЕРА
-Напиши короткое, вежливое и профессиональное сообщение для отправки в мессенджер (WhatsApp/Telegram) по поводу вакансии '{jobTitle}' в компании '{jobCompany}'.
-Представься от имени {candidateName}. Уточни, актуальна ли еще вакансия и куда можно направить резюме.
-`.trim(),
-    emailJobMatch: `
-# ЗАДАЧА: СОПОСТАВЛЕНИЕ EMAIL С ВАКАНСИЕЙ
-Проанализируй текст письма и сравни его с предоставленным списком вакансий.
-Верни ТОЛЬКО ID наиболее подходящей вакансии. Если не уверен, верни "UNKNOWN".
-`.trim(),
+    hrResponseAnalysis: `Analyze the following email from an HR manager. Based on its content, determine the current status of the job application. 
+Your response must be a single word from this list: 'interview', 'offer', 'archive' (if it's a rejection), or 'tracking' (if it's a neutral or scheduling follow-up). 
+Do not provide any explanation, just the single status word.`,
+
+    shortMessage: `You are a job applicant. Write a short, professional, and friendly introductory message to a recruiter via a messenger (like Telegram or WhatsApp) regarding the "{jobTitle}" position at "{jobCompany}".
+The message should be brief, mention the candidate's name ({candidateName}), express interest in the role, and ask if it's a good time to connect.
+The output should be the message text only.`,
+
+    emailJobMatch: `Analyze the following email text and the provided list of jobs. Identify which job the email is referring to.
+Return ONLY the 'id' of the matching job from the list. If you cannot confidently determine a match, return the string "UNKNOWN".
+Do not provide any explanation or extra text.`,
 };

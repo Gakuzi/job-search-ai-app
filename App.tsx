@@ -47,8 +47,8 @@ import {
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
 import { sendEmail, listMessages } from './services/gmailService';
-import SettingsPanel from "./components/SettingsPanel";
 import JobComparisonModal from "./components/JobComparisonModal";
+import MainHeader from './components/MainHeader';
 
 // FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
 declare const gapi: any;
@@ -79,11 +79,10 @@ function App() {
     const [foundJobs, setFoundJobs] = useState<Job[]>([]);
 
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
-    const [message, setMessage] = useState('Настройте параметры поиска и нажмите "Найти вакансии".');
+    const [message, setMessage] = useState('Настройте параметры поиска в Настройках (⚙️) и нажмите "Найти вакансии".');
     
     const [modal, setModal] = useImmer<ModalState>({ type: 'none' });
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
@@ -816,21 +815,10 @@ function App() {
 
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <main className="flex-1 overflow-y-auto p-6">
-                        <SettingsPanel
-                            profiles={profiles}
-                            activeProfile={activeProfile}
-                            onAddProfile={() => handleAddProfile()}
-                            onDeleteProfile={handleDeleteProfile}
-                            onSwitchProfile={setActiveProfileId}
-                            onUpdateProfile={handleUpdateProfile}
-                            onSearch={handleSearch}
-                            status={status}
-                            isSettingsExpanded={isSettingsExpanded}
-                            setIsSettingsExpanded={setIsSettingsExpanded}
-                            googleUser={googleUser}
-                            isGoogleConnected={isGoogleConnected}
-                            onGoogleSignIn={handleGoogleSignIn}
-                            onGoogleSignOut={handleGoogleSignOut}
+                        <MainHeader
+                           view={view}
+                           onSearch={handleSearch}
+                           status={status}
                         />
 
                         <StatusBar status={status} message={message} />

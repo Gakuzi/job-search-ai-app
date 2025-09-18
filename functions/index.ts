@@ -79,7 +79,11 @@ const getAvitoToken = async (clientId: string, clientSecret: string): Promise<st
 
 
 // 2. Основная HTTPS-функция, вызываемая из нашего приложения
-export const findAvitoJobs = functions.https.onCall(async (data: RequestData) => {
+// FIX: Updated the handler signature for `functions.https.onCall`.
+// Newer versions of the `firebase-functions` SDK pass a single `request` object
+// containing the payload in `request.data`, instead of passing the data directly. This resolves the type error.
+export const findAvitoJobs = functions.https.onCall(async (request) => {
+    const data: RequestData = request.data;
     const { clientId, clientSecret, searchSettings } = data;
 
     if (!clientId || !clientSecret) {
