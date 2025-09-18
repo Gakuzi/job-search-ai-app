@@ -126,7 +126,7 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
       .replace('{candidateName}', candidateName);
 
     const response = await ai.models.generateContent({
-        model: "gem-ini-2.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt
     });
     return response.text;
