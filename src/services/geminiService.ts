@@ -1,5 +1,8 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
+// FIX: Import DEFAULT_PROMPTS to make it available in this module.
+import { DEFAULT_PROMPTS } from "../constants";
 
 const getAiClient = () => {
     // Vite использует `import.meta.env` для доступа к переменным окружения

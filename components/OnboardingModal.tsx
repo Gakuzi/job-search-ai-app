@@ -7,7 +7,7 @@ import { analyzeResumeAndAskQuestions, generateProfileFromChat } from '../servic
 import type { SearchSettings } from '../types';
 
 interface OnboardingModalProps {
-    onFinish: (result: { resume: string, settings: SearchSettings }) => void;
+    onFinish: (result: { resume: string, settings: SearchSettings, profileName: string }) => void;
     onClose: () => void;
 }
 

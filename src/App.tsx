@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { v4 as uuidv4 } from 'uuid';
@@ -176,11 +177,13 @@ function App() {
             );
             
             const results = await Promise.all(promises);
-            const allJobs = results.flat().map(job => ({
+            // FIX: Add missing 'kanbanStatus' property to satisfy the 'Job' type.
+            const allJobs: Job[] = results.flat().map(job => ({
                 ...job,
                 id: uuidv4(),
                 userId: user!.uid,
                 profileId: activeProfile.id,
+                kanbanStatus: 'new',
             }));
 
             setFoundJobs(allJobs);
@@ -192,8 +195,9 @@ function App() {
     };
     
     const handleSaveJobs = (jobs: Job[]) => {
-        const jobsToSave = jobs.map(({ id, ...rest }) => rest);
-        firestoreService.saveTrackedJobs(jobsToSave)
+        // FIX: The firestore service needs the full Job object, including the ID.
+        // The previous implementation was incorrectly removing the ID.
+        firestoreService.saveTrackedJobs(jobs)
             .then(() => {
                 setTrackedJobs(prev => [...prev, ...jobs]);
                 setFoundJobs(prev => prev.filter(f => !jobs.some(s => s.id === f.id)));
