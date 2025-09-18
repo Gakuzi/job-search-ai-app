@@ -11,7 +11,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 
 import Header from './components/Header';
-import SettingsPanel from './components/SettingsPanel';
 import JobList from './components/JobList';
 import ApplicationTracker from './components/ApplicationTracker';
 import StatusBar from './components/StatusBar';
@@ -22,6 +21,8 @@ import HrAnalysisModal from './components/HrAnalysisModal';
 import GmailScannerModal from './components/GmailScannerModal';
 import AuthGuard from './components/AuthGuard';
 import ConfigurationError from './components/ConfigurationError';
+import SettingsModal from './components/SettingsModal';
+import { SparklesIcon } from './components/icons/SparklesIcon';
 
 
 import { useTheme } from './hooks/useTheme';
@@ -76,9 +77,9 @@ function App() {
 
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
     const [message, setMessage] = useState('Настройте параметры поиска и нажмите "Найти вакансии".');
-    const [isSettingsExpanded, setIsSettingsExpanded] = useState(true);
-
+    
     const [modal, setModal] = useState<ModalState>({ type: 'none' });
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
@@ -283,6 +284,11 @@ function App() {
         setActiveProfileId(createdProfile.id);
     };
 
+    const handleOpenOnboarding = () => {
+        setIsSettingsModalOpen(false);
+        setModal({ type: 'onboarding' });
+    }
+
     const handleDeleteProfile = async (id: string) => {
         if (profiles.length <= 1) {
             alert('Нельзя удалить единственный профиль.');
@@ -325,7 +331,6 @@ function App() {
             } else {
                 setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
             }
-            setIsSettingsExpanded(false);
         } catch (error) {
             setStatus(AppStatus.Error);
             setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
@@ -580,24 +585,41 @@ function App() {
     return (
         <AuthGuard user={user} loading={isAuthLoading}>
             <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-200 font-sans`}>
-                <Header theme={theme} setTheme={setTheme} view={view} setView={setView} user={user} onLogout={handleLogout} />
+                <Header 
+                    theme={theme} 
+                    setTheme={setTheme} 
+                    view={view} 
+                    setView={setView} 
+                    user={user} 
+                    onLogout={handleLogout} 
+                    onOpenSettings={() => setIsSettingsModalOpen(true)}
+                />
                 <main className="container mx-auto p-4 md:p-6 flex-1">
-                    <SettingsPanel
-                        profiles={profiles}
-                        activeProfile={activeProfile}
-                        onAddProfile={() => setModal({ type: 'onboarding' })}
-                        onDeleteProfile={handleDeleteProfile}
-                        onSwitchProfile={setActiveProfileId}
-                        onUpdateProfile={handleUpdateProfile}
-                        onSearch={handleSearch}
-                        status={status}
-                        isSettingsExpanded={isSettingsExpanded}
-                        setIsSettingsExpanded={setIsSettingsExpanded}
-                        googleUser={googleUser}
-                        isGoogleConnected={isGoogleConnected}
-                        onGoogleSignIn={handleGoogleSignIn}
-                        onGoogleSignOut={handleGoogleSignOut}
-                    />
+                    <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-center sm:text-left">
+                            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Панель управления поиском</h2>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Активный профиль: <span className="font-semibold text-primary-500">{activeProfile?.name || '...'}</span>
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleSearch}
+                            disabled={status === AppStatus.Loading || !activeProfile}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        >
+                            {status === AppStatus.Loading ? (
+                                <>
+                                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                                 Поиск...
+                                </>
+                            ) : (
+                                <>
+                                <SparklesIcon className="w-5 h-5" />
+                                Найти вакансии с ИИ
+                                </>
+                            )}
+                        </button>
+                    </div>
                     
                     {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
 
@@ -630,6 +652,21 @@ function App() {
                         </div>
                     )}
                 </main>
+                
+                <SettingsModal
+                    isOpen={isSettingsModalOpen}
+                    onClose={() => setIsSettingsModalOpen(false)}
+                    profiles={profiles}
+                    activeProfile={activeProfile}
+                    onAddProfile={handleOpenOnboarding}
+                    onDeleteProfile={handleDeleteProfile}
+                    onSwitchProfile={setActiveProfileId}
+                    onUpdateProfile={handleUpdateProfile}
+                    googleUser={googleUser}
+                    isGoogleConnected={isGoogleConnected}
+                    onGoogleSignIn={handleGoogleSignIn}
+                    onGoogleSignOut={handleGoogleSignOut}
+                />
                 {renderModal()}
             </div>
         </AuthGuard>

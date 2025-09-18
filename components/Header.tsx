@@ -2,6 +2,7 @@ import React from 'react';
 import { SunIcon } from './icons/SunIcon';
 import { MoonIcon } from './icons/MoonIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
+import { Cog6ToothIcon } from './icons/Cog6ToothIcon';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -11,9 +12,10 @@ interface HeaderProps {
     setView: (view: 'search' | 'applications') => void;
     user: User | null;
     onLogout: () => void;
+    onOpenSettings: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, onLogout, onOpenSettings }) => {
     const toggleTheme = () => {
         setTheme(theme === 'dark' ? 'light' : 'dark');
     };
@@ -44,7 +46,7 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, o
                     </button>
                 </div>
                 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-4">
                     {user && (
                         <div className="hidden lg:flex items-center gap-2">
                              <span className="text-sm text-slate-500 dark:text-slate-400">{user.email}</span>
@@ -53,6 +55,13 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, view, setView, user, o
                              </button>
                         </div>
                     )}
+                     <button
+                        onClick={onOpenSettings}
+                        className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        aria-label="Настройки"
+                    >
+                        <Cog6ToothIcon className="w-6 h-6" />
+                    </button>
                      <button
                         onClick={toggleTheme}
                         className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500"

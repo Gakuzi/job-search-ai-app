@@ -68,38 +68,54 @@ export const sendEmail = async (params: SendEmailParams): Promise<void> => {
 };
 
 export const listMessages = async (maxResults = 20): Promise<Email[]> => {
-    const listResponse = await gapi.client.gmail.users.messages.list({
-        userId: 'me',
-        maxResults,
-        labelIds: ['INBOX'],
-    });
+    try {
+        const listResponse = await gapi.client.gmail.users.messages.list({
+            userId: 'me',
+            maxResults,
+            labelIds: ['INBOX'],
+        });
 
-    const messages = listResponse.result.messages || [];
-    if (messages.length === 0) {
-        return [];
-    }
-
-    const batch = gapi.client.newBatch();
-    messages.forEach(message => {
-        if (message.id) {
-            batch.add(gapi.client.gmail.users.messages.get({ userId: 'me', id: message.id }));
+        const messages = listResponse.result.messages || [];
+        if (messages.length === 0) {
+            return [];
         }
-    });
 
-    const batchResponse = await batch;
-    
-    return Object.values(batchResponse.result)
-        .map((response: any) => {
-             if (!response || !response.result) return null;
-             const msg = response.result as any;
-             const headers = msg.payload?.headers || [];
-             return {
-                 id: msg.id || '',
-                 from: getHeader(headers, 'From'),
-                 subject: getHeader(headers, 'Subject'),
-                 snippet: msg.snippet || '',
-                 body: getBody(msg),
-             };
-        })
-        .filter((email): email is Email => email !== null);
+        const batch = gapi.client.newBatch();
+        messages.forEach(message => {
+            if (message.id) {
+                batch.add(gapi.client.gmail.users.messages.get({ userId: 'me', id: message.id }));
+            }
+        });
+
+        const batchResponse = await batch;
+        const results = batchResponse.result;
+        if (!results) {
+            return [];
+        }
+        
+        return Object.values(results)
+            .map((responseWrapper: any) => {
+                if (!responseWrapper || responseWrapper.status >= 400 || !responseWrapper.result || responseWrapper.result.error) {
+                    console.error('Ошибка в одном из ответов пакета Gmail:', responseWrapper.result?.error);
+                    return null;
+                }
+                const msg = responseWrapper.result as any;
+                const headers = msg.payload?.headers || [];
+                return {
+                    id: msg.id || '',
+                    from: getHeader(headers, 'From'),
+                    subject: getHeader(headers, 'Subject'),
+                    snippet: msg.snippet || '',
+                    body: getBody(msg),
+                };
+            })
+            .filter((email): email is Email => email !== null);
+    } catch (error: any) {
+        console.error("Ошибка Gmail API в listMessages:", error);
+        const errorMessage = error.result?.error?.message || error.message || "Не удалось получить доступ к Gmail API.";
+        if (errorMessage.includes("API not enabled") || errorMessage.includes("accessNotConfigured")) {
+            throw new Error("API Gmail не включено в вашем проекте Google Cloud. Перейдите в Google Cloud Console, найдите 'Gmail API' и нажмите 'Enable'.");
+        }
+        throw new Error(`Ошибка при чтении писем: ${errorMessage}`);
+    }
 };
