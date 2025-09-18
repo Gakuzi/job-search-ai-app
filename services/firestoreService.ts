@@ -1,138 +1,78 @@
-import {
-    collection,
-    query,
-    where,
-    onSnapshot,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    doc,
+import { 
+    collection, 
+    query, 
+    where, 
+    getDocs, 
+    doc, 
+    setDoc, 
+    deleteDoc, 
     writeBatch,
-    getDocs,
+    serverTimestamp,
+    orderBy,
+    Timestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Profile, Job, SearchSettings, Prompts, Platform } from '../types';
+import type { Profile, Job, KanbanStatus } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_PROMPTS, DEFAULT_SEARCH_SETTINGS } from '../constants';
 
+export const getProfiles = async (userId: string): Promise<Profile[]> => {
+    const q = query(collection(db, 'profiles'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Profile));
+};
 
-// --- Profiles ---
+export const saveProfile = async (profile: Partial<Profile> & { userId: string }): Promise<string> => {
+    const profileId = profile.id || uuidv4();
+    const profileRef = doc(db, 'profiles', profileId);
+    
+    // Create a new object for Firestore to avoid mutating the original
+    const dataToSave: any = { ...profile, id: profileId };
+    if (!profile.id) {
+        dataToSave.createdAt = serverTimestamp();
+    }
 
-export const subscribeToProfiles = (userId: string, callback: (profiles: Profile[]) => void) => {
-    const q = query(collection(db, 'profiles'), where('userId', '==', userId));
-    return onSnapshot(q, (snapshot) => {
-        const profiles = snapshot.docs.map(doc => {
-            const data = doc.data() || {};
-            const settings: Partial<SearchSettings> = data.settings || {};
-            const prompts: Partial<Prompts> = data.prompts || {};
-
-            const cleanProfile: Profile = {
-                id: doc.id,
-                userId: data.userId || '',
-                name: data.name || '',
-                resume: data.resume || '',
-                settings: {
-                    ...DEFAULT_SEARCH_SETTINGS,
-                    ...settings,
-                    platforms: Array.isArray(settings.platforms) ? settings.platforms : DEFAULT_SEARCH_SETTINGS.platforms,
-                },
-                prompts: {
-                    jobSearch: prompts.jobSearch || DEFAULT_PROMPTS.jobSearch,
-                    resumeAdapt: prompts.resumeAdapt || DEFAULT_PROMPTS.resumeAdapt,
-                    coverLetter: prompts.coverLetter || DEFAULT_PROMPTS.coverLetter,
-                    hrResponseAnalysis: prompts.hrResponseAnalysis || DEFAULT_PROMPTS.hrResponseAnalysis,
-                    shortMessage: prompts.shortMessage || DEFAULT_PROMPTS.shortMessage,
-                    emailJobMatch: prompts.emailJobMatch || DEFAULT_PROMPTS.emailJobMatch,
-                },
-            };
-            return cleanProfile;
-        });
-        callback(profiles);
-    });
+    await setDoc(profileRef, dataToSave, { merge: true });
+    return profileId;
 };
 
 
-export const addProfile = async (profileData: Omit<Profile, 'id'>): Promise<Profile> => {
-    const docRef = await addDoc(collection(db, 'profiles'), profileData);
-    return { id: docRef.id, ...profileData };
-};
-
-export const updateProfile = (profile: Profile) => {
-    const { id, ...data } = profile;
-    return updateDoc(doc(db, 'profiles', id), data);
-};
-
-export const deleteProfile = async (profileId: string) => {
+export const deleteProfile = async (profileId: string): Promise<void> => {
     // Also delete associated jobs
-    const jobsQuery = query(collection(db, 'jobs'), where('profileId', '==', profileId));
-    const jobsSnapshot = await getDocs(jobsQuery);
+    const jobsSnapshot = await getDocs(query(collection(db, 'jobs'), where('profileId', '==', profileId)));
     const batch = writeBatch(db);
-    jobsSnapshot.forEach(jobDoc => {
-        batch.delete(doc(db, 'jobs', jobDoc.id));
+    jobsSnapshot.forEach(doc => {
+        batch.delete(doc.ref);
     });
+    batch.delete(doc(db, 'profiles', profileId));
     await batch.commit();
-
-    // Delete the profile itself
-    return deleteDoc(doc(db, 'profiles', profileId));
 };
 
-// --- Jobs ---
 
-export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void) => {
+export const getTrackedJobs = async (userId: string): Promise<Job[]> => {
     const q = query(collection(db, 'jobs'), where('userId', '==', userId));
-    return onSnapshot(q, (snapshot) => {
-        const jobs = snapshot.docs.map(doc => {
-            const data = doc.data() || {};
-            const contacts = data.contacts || {};
-            
-            const cleanJob: Job = {
-                id: doc.id,
-                title: data.title || '',
-                company: data.company || '',
-                companyRating: data.companyRating || 0,
-                companyReviewSummary: data.companyReviewSummary || '',
-                salary: data.salary || '',
-                location: data.location || '',
-                description: data.description || '',
-                responsibilities: Array.isArray(data.responsibilities) ? [...data.responsibilities] : [],
-                requirements: Array.isArray(data.requirements) ? [...data.requirements] : [],
-                matchAnalysis: data.matchAnalysis || '',
-                url: data.url || '',
-                sourcePlatform: data.sourcePlatform || 'Неизвестно',
-                contacts: {
-                    email: contacts.email,
-                    phone: contacts.phone,
-                    telegram: contacts.telegram,
-                },
-                kanbanStatus: data.kanbanStatus || 'new',
-                notes: data.notes || undefined,
-                history: Array.isArray(data.history) ? data.history : [],
-                profileId: data.profileId || '',
-                userId: data.userId || '',
-            };
-             if (!cleanJob.contacts?.email && !cleanJob.contacts?.phone && !cleanJob.contacts?.telegram) {
-                delete cleanJob.contacts;
-            }
-            return cleanJob;
-        });
-        callback(jobs);
-    });
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
 };
 
-export const addJobsBatch = async (jobs: Job[]) => {
+export const saveTrackedJobs = async (jobsToSave: Job[]): Promise<void> => {
+    if (jobsToSave.length === 0) return;
     const batch = writeBatch(db);
-    jobs.forEach(jobData => {
-        const jobWithOurId = {...jobData, id: jobData.id || uuidv4()};
-        const docRef = doc(db, 'jobs', jobWithOurId.id);
-        batch.set(docRef, jobWithOurId);
+    jobsToSave.forEach(jobData => {
+        const jobRef = doc(db, 'jobs', jobData.id);
+        batch.set(jobRef, {
+            ...jobData,
+            kanbanStatus: 'new', // All new jobs start in the 'new' column
+        });
     });
     await batch.commit();
 };
 
-export const updateJob = (jobId: string, updates: Partial<Job>) => {
-    return updateDoc(doc(db, 'jobs', jobId), updates);
+export const updateJobStatus = async (jobId: string, newStatus: KanbanStatus): Promise<void> => {
+    const jobRef = doc(db, 'jobs', jobId);
+    await setDoc(jobRef, { kanbanStatus: newStatus }, { merge: true });
 };
 
-export const deleteJob = (jobId: string) => {
-    return deleteDoc(doc(db, 'jobs', jobId));
+export const deleteTrackedJob = async (jobId: string): Promise<void> => {
+    const jobRef = doc(db, 'jobs', jobId);
+    await deleteDoc(jobRef);
 };
