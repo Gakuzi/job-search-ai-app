@@ -21,10 +21,6 @@ import { DEFAULT_PROMPTS } from '../constants';
 export const subscribeToProfiles = (userId: string, callback: (profiles: Profile[]) => void) => {
     const q = query(collection(db, 'profiles'), where('userId', '==', userId));
     return onSnapshot(q, (snapshot) => {
-        // FIX: Implement deep, manual object construction to aggressively sanitize data.
-        // This prevents non-serializable internal Firebase objects (which appear during
-        // offline/error states) from entering React state, even if nested inside other objects.
-        // This is the definitive fix for the "circular structure" error.
         const profiles = snapshot.docs.map(doc => {
             const data = doc.data() || {};
             const settings: Partial<SearchSettings> = data.settings || {};
@@ -54,6 +50,7 @@ export const subscribeToProfiles = (userId: string, callback: (profiles: Profile
                     coverLetter: prompts.coverLetter || DEFAULT_PROMPTS.coverLetter,
                     hrResponseAnalysis: prompts.hrResponseAnalysis || DEFAULT_PROMPTS.hrResponseAnalysis,
                     shortMessage: prompts.shortMessage || DEFAULT_PROMPTS.shortMessage,
+                    emailJobMatch: prompts.emailJobMatch || DEFAULT_PROMPTS.emailJobMatch,
                 },
             };
             return cleanProfile;
@@ -92,8 +89,6 @@ export const deleteProfile = async (profileId: string) => {
 export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void) => {
     const q = query(collection(db, 'jobs'), where('userId', '==', userId));
     return onSnapshot(q, (snapshot) => {
-        // FIX: Manually construct the Job object for the same reason as subscribeToProfiles.
-        // This ensures data purity and prevents crashes from circular references in the state.
         const jobs = snapshot.docs.map(doc => {
             const data = doc.data() || {};
             const contacts = data.contacts || {};
@@ -130,14 +125,9 @@ export const subscribeToJobs = (userId: string, callback: (jobs: Job[]) => void)
     });
 };
 
-// FIX: Corrected parameter type from `Omit<Job, 'id'>[]` to `Job[]`.
-// The previous type caused an error because `jobData.id` was being accessed on an object where it was explicitly omitted.
-// This change ensures the type matches the data received from the Gemini service, which includes an ID.
 export const addJobsBatch = async (jobs: Job[]) => {
     const batch = writeBatch(db);
     jobs.forEach(jobData => {
-        // The Gemini schema provides an ID, but we'll use Firestore's for consistency if needed.
-        // For this use case, using Gemini's UUID is fine as it's generated client-side.
         const jobWithOurId = {...jobData, id: jobData.id || uuidv4()};
         const docRef = doc(db, 'jobs', jobWithOurId.id);
         batch.set(docRef, jobWithOurId);

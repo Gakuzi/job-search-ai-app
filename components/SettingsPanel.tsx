@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { Profile, SearchSettings } from '../types';
+import type { Profile, GoogleUser } from '../types';
 import { AppStatus } from '../constants';
 import { useDebounce } from '../hooks/useDebounce';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
-import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import { BriefcaseIcon } from './icons/BriefcaseIcon';
+import { PencilSquareIcon } from './icons/PencilSquareIcon';
+import { LinkIcon } from './icons/LinkIcon';
+import GmailConnect from './GmailConnect';
 
-type SettingsTab = 'search' | 'resume' | 'profiles';
+type SettingsTab = 'search' | 'resume' | 'profiles' | 'integrations';
 
 interface SettingsPanelProps {
     profiles: Profile[];
@@ -16,11 +19,13 @@ interface SettingsPanelProps {
     onSwitchProfile: (id: string) => void;
     onUpdateProfile: (updater: (draft: Profile) => void) => void;
     onSearch: () => void;
-    onExport: () => void;
-    onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
     status: AppStatus;
     isSettingsExpanded: boolean;
     setIsSettingsExpanded: (isExpanded: boolean) => void;
+    googleUser: GoogleUser | null;
+    isGoogleConnected: boolean;
+    onGoogleSignIn: () => void;
+    onGoogleSignOut: () => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -31,15 +36,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     onSwitchProfile,
     onUpdateProfile,
     onSearch,
-    onExport,
-    onImport,
     status,
     isSettingsExpanded,
     setIsSettingsExpanded,
+    googleUser,
+    isGoogleConnected,
+    onGoogleSignIn,
+    onGoogleSignOut,
 }) => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('search');
-    const importInputRef = useRef<HTMLInputElement>(null);
-
     const [profileName, setProfileName] = useState(activeProfile?.name || '');
     const debouncedProfileName = useDebounce(profileName, 500);
 
@@ -56,7 +61,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             });
         }
     }, [debouncedProfileName, activeProfile, onUpdateProfile]);
-
 
     if (!activeProfile) {
         return (
@@ -91,12 +95,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         }
     };
     
-    const TabButton: React.FC<{tabId: SettingsTab, label: string}> = ({tabId, label}) => (
+    const TabButton: React.FC<{tabId: SettingsTab, label: string, icon: React.ReactNode}> = ({tabId, label, icon}) => (
         <button
             onClick={() => setActiveTab(tabId)}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabId ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+            className={`px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${activeTab === tabId ? 'bg-primary-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
         >
-            {label}
+            {icon}
+            <span className="hidden sm:inline">{label}</span>
         </button>
     );
 
@@ -116,9 +121,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {isSettingsExpanded && (
                 <div className="p-4 border-t border-slate-200 dark:border-slate-700">
                     <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-4">
-                        <TabButton tabId="search" label="Поиск"/>
-                        <TabButton tabId="resume" label="Резюме"/>
-                        <TabButton tabId="profiles" label="Профили"/>
+                        <TabButton tabId="search" label="Параметры" icon={<BriefcaseIcon className="w-4 h-4" />}/>
+                        <TabButton tabId="resume" label="Резюме" icon={<PencilSquareIcon className="w-4 h-4" />}/>
+                        <TabButton tabId="integrations" label="Интеграции" icon={<LinkIcon className="w-4 h-4" />}/>
+                        <TabButton tabId="profiles" label="Профили" icon={<svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>}/>
                     </div>
                     
                     <div className="space-y-6">
@@ -161,6 +167,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 <label htmlFor="resume" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Базовое резюме (Markdown)</label>
                                 <textarea id="resume" name="resume" value={activeProfile.resume} onChange={handleResumeChange} rows={15} className="mt-1 w-full input-style font-mono text-xs"/>
                             </div>
+                        )}
+                        {activeTab === 'integrations' && (
+                            <GmailConnect 
+                                isConnected={isGoogleConnected}
+                                user={googleUser}
+                                onConnect={onGoogleSignIn}
+                                onDisconnect={onGoogleSignOut}
+                            />
                         )}
                          {activeTab === 'profiles' && (
                              <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg space-y-4">
@@ -247,26 +261,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 .btn-danger:disabled {
                     background-color: #94a3b8;
                     cursor: not-allowed;
-                }
-                .tooltip-text {
-                    position: absolute;
-                    bottom: 100%;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    margin-bottom: 0.5rem;
-                    width: 16rem;
-                    padding: 0.5rem;
-                    font-size: 0.75rem;
-                    color: white;
-                    background-color: #1e293b;
-                    border-radius: 0.375rem;
-                    opacity: 0;
-                    transition: opacity 0.2s;
-                    pointer-events: none;
-                    z-index: 10;
-                }
-                .group:hover .tooltip-text {
-                    opacity: 1;
                 }
             `}</style>
         </div>

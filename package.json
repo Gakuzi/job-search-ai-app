@@ -21,6 +21,8 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.13",
+    "@types/gapi": "^0.0.47",
+    "@types/google.accounts": "^0.0.14",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@types/uuid": "^9.0.8",

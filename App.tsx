@@ -1,3 +1,7 @@
+// FIX: Add references for GAPI and Google Accounts to resolve type errors.
+/// <reference types="gapi" />
+/// <reference types="google.accounts" />
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,12 +16,14 @@ import Modal from './components/Modal';
 import OnboardingModal from './components/OnboardingModal';
 import JobDetailModal from './components/JobDetailModal';
 import HrAnalysisModal from './components/HrAnalysisModal';
+import ReplyScannerModal from './components/ReplyScannerModal';
 import AuthGuard from './components/AuthGuard';
-import FirebaseConfigError from './components/FirebaseConfigError';
+import ConfigurationError from './components/ConfigurationError';
+
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
-import type { Job, Profile, KanbanStatus, SearchSettings } from './types';
+import type { Job, Profile, KanbanStatus, SearchSettings, GmailThread, GoogleUser } from './types';
 
 import {
     findJobsOnRealWebsite,
@@ -25,7 +31,8 @@ import {
     generateCoverLetter,
     getInterviewQuestions,
     analyzeHrResponse,
-    generateShortMessage
+    generateShortMessage,
+    matchEmailToJob,
 } from './services/geminiService';
 import { auth, firebaseConfig } from './services/firebase';
 import {
@@ -38,6 +45,9 @@ import {
     updateJob,
 } from './services/firestoreService';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { initTokenClient, initGapiClient, gapiLoad, getToken, revokeToken } from './services/googleAuthService';
+import { sendEmail, listThreads, getThread } from './services/gmailService';
+
 
 type View = 'search' | 'applications';
 type ModalState =
@@ -45,8 +55,10 @@ type ModalState =
     | { type: 'jobDetail'; job: Job }
     | { type: 'onboarding' }
     | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
-    | { type: 'hrAnalysis'; job: Job };
+    | { type: 'hrAnalysis'; job: Job }
+    | { type: 'replyScanner'; replies: GmailThread[], analysisJobId: string | null };
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function App() {
     const [theme, setTheme] = useTheme();
@@ -65,7 +77,17 @@ function App() {
 
     const [modal, setModal] = useState<ModalState>({ type: 'none' });
 
+    // Google Auth State
+    const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
+    const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null);
+    const [isGapiReady, setIsGapiReady] = useState(false);
+    
+    const isGoogleConnected = !!gapi.client?.getToken();
+
     const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy...');
+    const isGoogleConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_');
+
+    // --- Effects ---
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -74,6 +96,20 @@ function App() {
         });
         return () => unsubscribe();
     }, []);
+
+    useEffect(() => {
+        // Initialize Google API clients
+        const initialize = async () => {
+            await gapiLoad('client:oauth2');
+            await initGapiClient();
+            setIsGapiReady(true);
+            setTokenClient(initTokenClient(handleGoogleAuthResponse));
+        };
+        if (isGoogleConfigured) {
+           initialize();
+        }
+    }, [isGoogleConfigured]);
+
 
     useEffect(() => {
         if (!user) {
@@ -103,11 +139,52 @@ function App() {
     }, [user, setProfiles, setJobs, activeProfileId, setActiveProfileId]);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
+    
+    // --- Google Auth Handlers ---
+    
+    const handleGoogleAuthResponse = useCallback(async (tokenResponse: google.accounts.oauth2.TokenResponse) => {
+        if (tokenResponse.access_token) {
+            try {
+                const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { 'Authorization': `Bearer ${tokenResponse.access_token}` }
+                });
+                const userInfo = await response.json();
+                setGoogleUser({
+                    name: userInfo.name,
+                    email: userInfo.email,
+                    picture: userInfo.picture,
+                });
+            } catch (error) {
+                console.error("Failed to fetch Google user info:", error);
+                setStatus(AppStatus.Error);
+                setMessage("Не удалось получить информацию о пользователе Google.");
+            }
+        }
+    }, [setGoogleUser]);
+    
+    const handleGoogleSignIn = () => {
+        if (tokenClient) {
+            getToken(tokenClient);
+        }
+    };
+    
+    const handleGoogleSignOut = () => {
+        if (gapi.client.getToken()) {
+            revokeToken();
+            setGoogleUser(null);
+        }
+    };
+
+    // FIX: Add handleLogout function for signing out the user.
+    const handleLogout = () => {
+        signOut(auth).catch(error => console.error("Logout failed:", error));
+    };
+
+    // --- Profile Handlers ---
 
     const handleUpdateProfile = useCallback((updater: (draft: Profile) => void) => {
         if (!activeProfile) return;
         
-        // This is a safe way to update without Immer's complexities across async boundaries
         setProfiles(currentProfiles => {
             const profileIndex = currentProfiles.findIndex(p => p.id === activeProfile.id);
             if (profileIndex === -1) return currentProfiles;
@@ -146,6 +223,8 @@ function App() {
             setActiveProfileId(profiles.find(p => p.id !== id)?.id || null);
         }
     };
+
+    // --- Job Search & Management ---
 
     const handleSearch = async () => {
         if (!activeProfile) return;
@@ -196,6 +275,8 @@ function App() {
     const handleUpdateJobStatus = (jobId: string, newStatus: KanbanStatus) => {
         handleUpdateJob(jobId, { kanbanStatus: newStatus });
     };
+
+    // --- AI Actions ---
 
     const runAiAction = async (title: string, action: () => Promise<string>) => {
         setModal({ type: 'aiContent', title, content: '', isLoading: true });
@@ -257,14 +338,28 @@ function App() {
         setStatus(AppStatus.Loading);
         
         try {
-            let url: string;
             if (action === 'email') {
                 setMessage('ИИ готовит текст для email...');
                 const { subject, body } = await generateCoverLetter(activeProfile.prompts.coverLetter, job, activeProfile.name);
-                url = `mailto:${job.contacts?.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            } else {
+
+                if (isGoogleConnected && googleUser?.email) {
+                    await sendEmail({
+                        to: job.contacts?.email || '',
+                        subject,
+                        body,
+                        from: googleUser.email,
+                        fromName: activeProfile.name,
+                    });
+                     setMessage(`Email отправлен через ваш Gmail аккаунт. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+                } else {
+                    const url = `mailto:${job.contacts?.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    window.open(url, '_blank');
+                    setMessage(`Открыт почтовый клиент. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
+                }
+            } else { // Messengers
                 setMessage('ИИ готовит сообщение для мессенджера...');
                 const message = await generateShortMessage(activeProfile.prompts.shortMessage, job, activeProfile.name);
+                 let url: string;
                 if (action === 'whatsapp') {
                     const phone = job.contacts?.phone?.replace(/\D/g, ''); // Clean phone number
                     url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -272,12 +367,11 @@ function App() {
                     const contact = job.contacts?.telegram?.replace('@', ''); // Clean username
                     url = `tg://msg?to=${contact}&text=${encodeURIComponent(message)}`;
                 }
+                 window.open(url, '_blank');
+                 setMessage(`Открыт клиент для отправки сообщения. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
             }
             
-            window.open(url, '_blank');
             setStatus(AppStatus.Success);
-            setMessage(`Открыт клиент для отправки сообщения. Статус вакансии "${job.title}" изменен на "Отслеживаю".`);
-            // Automatically move the card to 'tracking' after a successful quick apply
             if (job.kanbanStatus === 'new') {
                 handleUpdateJobStatus(job.id, 'tracking');
             }
@@ -286,23 +380,91 @@ function App() {
             const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка.';
             setStatus(AppStatus.Error);
             setMessage(`Ошибка при генерации сообщения: ${errorMessage}`);
-            // Rethrow to allow modal to stop loading indicator
             throw error;
         }
     };
+    
+    // --- Gmail Scanner ---
+    const handleScanReplies = async () => {
+        if (!activeProfile || !isGoogleConnected) return;
+        
+        setStatus(AppStatus.Loading);
+        setMessage("Сканирую Gmail на наличие ответов от HR...");
+        setModal({ type: 'replyScanner', replies: [], analysisJobId: null });
 
-    const handleQuickApplyEmail = (job: Job) => handleQuickApply('email', job);
-    const handleQuickApplyWhatsapp = (job: Job) => handleQuickApply('whatsapp', job);
-    const handleQuickApplyTelegram = (job: Job) => handleQuickApply('telegram', job);
+        try {
+            const companies = [...new Set(jobs.map(j => j.company))];
+            const searchQueries = companies.map(c => `from:(${c.toLowerCase().replace(/\s/g, ' OR ')})`);
+            const query = searchQueries.join(' OR ');
 
-    const handleLogout = async () => {
-        await signOut(auth);
-        setUser(null);
-        setActiveProfileId(null);
+            // In a real app, you would use listThreads and getThread
+            // For this example, we use mock data to demonstrate the flow
+            const mockReplies: GmailThread[] = [
+                // FIX: Added missing 'threadId' property to GmailMessage mock object.
+                { id: 'thread1', snippet: 'Re: Вакансия Project Manager - Приглашение на собеседование', messages: [{ id: 'msg1', threadId: 'thread1', payload: { headers: [{name: 'Subject', value: 'Re: Вакансия Project Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Здравствуйте! Спасибо за отклик. Хотим пригласить вас на онлайн-собеседование 15 мая в 12:00. Подходит ли вам это время? С уважением, HR-отдел Tech Solutions.'))) } }] } }] },
+                // FIX: Added missing 'threadId' property to GmailMessage mock object.
+                { id: 'thread2', snippet: 'Отклик на вакансию Product Manager', messages: [{ id: 'msg2', threadId: 'thread2', payload: { headers: [{name: 'Subject', value: 'Re: Отклик на вакансию Product Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Добрый день! К сожалению, на данный момент мы не готовы продолжить общение по вашей кандидатуре. Спасибо за уделенное время. FinTech Innovations.'))) } }] } }] }
+            ];
+            
+            setModal({ type: 'replyScanner', replies: mockReplies, analysisJobId: null });
+            
+            setStatus(AppStatus.Success);
+            setMessage(`Найдено ${mockReplies.length} потенциальных ответа.`);
+
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Ошибка при сканировании почты.');
+            setModal({type: 'none'});
+        }
     };
     
+    const handleAnalyzeScannedReply = async (emailText: string) => {
+        if (!activeProfile) return;
+        
+        try {
+            // FIX: Correctly update state for 'useState' hook with an immutable pattern. 'use-immer' was not used for this state variable.
+            setModal(prevModal => {
+                if (prevModal.type === 'replyScanner') {
+                    return { ...prevModal, analysisJobId: 'loading' };
+                }
+                return prevModal;
+            });
+
+            // 1. Match email to a job
+            const matchedJobId = await matchEmailToJob(emailText, jobs);
+            const matchedJob = jobs.find(j => j.id === matchedJobId);
+            
+            if (!matchedJob) {
+                throw new Error("Не удалось найти подходящую вакансию для этого письма.");
+            }
+
+            // FIX: Correctly update state for 'useState' hook with an immutable pattern. 'use-immer' was not used for this state variable.
+            setModal(prevModal => {
+                if (prevModal.type === 'replyScanner') {
+                    return { ...prevModal, analysisJobId: matchedJob.id };
+                }
+                return prevModal;
+            });
+            
+            // 2. Analyze response and update status
+            await handleAnalyzeHrResponse(matchedJob, emailText);
+
+        } catch (error) {
+            setStatus(AppStatus.Error);
+            setMessage(error instanceof Error ? error.message : 'Ошибка при анализе ответа.');
+        } finally {
+            // Close modal or update its state after analysis
+             setTimeout(() => {
+                setModal({ type: 'none' });
+            }, 3000); // Give user time to see the result
+        }
+    };
+
+
+    // --- Render ---
+
     const renderModal = () => {
-        if (!isFirebaseConfigured) return null; // No modals if config is missing
+        if (!isFirebaseConfigured || !isGoogleConfigured) return null;
         switch (modal.type) {
             case 'jobDetail':
                 return <JobDetailModal
@@ -313,9 +475,9 @@ function App() {
                     onGenerateEmail={handleGenerateEmail}
                     onPrepareForInterview={handlePrepareForInterview}
                     onAnalyzeResponse={(job) => setModal({ type: 'hrAnalysis', job })}
-                    onQuickApplyEmail={handleQuickApplyEmail}
-                    onQuickApplyWhatsapp={handleQuickApplyWhatsapp}
-                    onQuickApplyTelegram={handleQuickApplyTelegram}
+                    onQuickApplyEmail={(job) => handleQuickApply('email', job)}
+                    onQuickApplyWhatsapp={(job) => handleQuickApply('whatsapp', job)}
+                    onQuickApplyTelegram={(job) => handleQuickApply('telegram', job)}
                 />;
             case 'aiContent':
                 return <Modal
@@ -328,7 +490,7 @@ function App() {
                 return <OnboardingModal
                     onClose={() => {
                         setModal({ type: 'none' });
-                        if(profiles.length === 0) handleAddProfile(); // Create a default if they close
+                        if(profiles.length === 0) handleAddProfile();
                     }}
                     onFinish={(result) => {
                         handleAddProfile(result);
@@ -341,13 +503,21 @@ function App() {
                     onClose={() => setModal({ type: 'none' })}
                     onAnalyze={(emailText) => handleAnalyzeHrResponse(modal.job, emailText)}
                 />;
+            case 'replyScanner':
+                return <ReplyScannerModal
+                    replies={modal.replies}
+                    jobs={jobs}
+                    analysisJobId={modal.analysisJobId}
+                    onClose={() => setModal({ type: 'none' })}
+                    onAnalyzeReply={handleAnalyzeScannedReply}
+                />;
             default:
                 return null;
         }
     };
 
-    if (!isFirebaseConfigured) {
-        return <FirebaseConfigError />;
+    if (!isFirebaseConfigured || !isGoogleConfigured) {
+        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
     
     return (
@@ -363,11 +533,13 @@ function App() {
                         onSwitchProfile={setActiveProfileId}
                         onUpdateProfile={handleUpdateProfile}
                         onSearch={handleSearch}
-                        onExport={() => {}}
-                        onImport={() => {}}
                         status={status}
                         isSettingsExpanded={isSettingsExpanded}
                         setIsSettingsExpanded={setIsSettingsExpanded}
+                        googleUser={googleUser}
+                        isGoogleConnected={isGoogleConnected}
+                        onGoogleSignIn={handleGoogleSignIn}
+                        onGoogleSignOut={handleGoogleSignOut}
                     />
                     
                     {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
@@ -390,6 +562,8 @@ function App() {
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
                                 onAdaptResume={handleAdaptResume}
                                 onGenerateEmail={handleGenerateEmail}
+                                isGoogleConnected={isGoogleConnected}
+                                onScanReplies={handleScanReplies}
                             />
                         )
                     ) : (

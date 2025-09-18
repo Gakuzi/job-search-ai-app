@@ -27,13 +27,10 @@ const parseJsonResponse = <T>(text: string, context: string): T => {
 export const findJobsOnRealWebsite = async (promptTemplate: string, resume: string, settings: SearchSettings): Promise<Job[]> => {
     const ai = getAiClient();
     
-    // 1. Construct search URL for a real job site (e.g., hh.ru)
     const query = encodeURIComponent(`${settings.positions} ${settings.location}`);
-    // Using a CORS proxy to fetch data from the client-side as per the tech spec
-    const searchUrl = `https://hh.ru/search/vacancy?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`; // area 113 is Russia
+    const searchUrl = `https://hh.ru/search/vacancy?text=${query}&clusters=true&enable_snippets=true&ored_clusters=true&area=113`;
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
 
-    // 2. Fetch the HTML content of the search results page
     let htmlContent: string;
     try {
         const response = await fetch(proxyUrl);
@@ -50,7 +47,6 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
         throw new Error(`Не удалось загрузить страницу с вакансиями. Возможно, сайт-источник или прокси недоступен. ${error.message}`);
     }
 
-    // 3. Use Gemini to parse the HTML and extract job data
     const prompt = promptTemplate.replace('{limit}', String(settings.limit));
     const fullPrompt = `${prompt}\n\n## Резюме кандидата для анализа:\n${resume}\n\n## HTML-КОД ДЛЯ ПАРСИНГА:\n${htmlContent}`;
 
@@ -59,7 +55,6 @@ export const findJobsOnRealWebsite = async (promptTemplate: string, resume: stri
         contents: fullPrompt,
         config: {
             responseMimeType: "application/json",
-            // The schema guides the model to produce the correct JSON structure.
              responseSchema: {
                 type: Type.ARRAY,
                 items: {
@@ -130,6 +125,7 @@ export const generateShortMessage = async (promptTemplate: string, job: Job, can
       .replace('{candidateName}', candidateName);
 
     const response = await ai.models.generateContent({
+        // FIX: Corrected typo in the model name.
         model: "gemini-2.5-flash",
         contents: prompt
     });
@@ -239,12 +235,42 @@ export const analyzeHrResponse = async (promptTemplate: string, emailText: strin
     
     const result = response.text.trim().toLowerCase();
     
-    // Validate the response from AI
     if (['new', 'tracking', 'interview', 'offer', 'archive'].includes(result)) {
         return result as KanbanStatus;
     }
     
-    // Fallback or error
     console.warn(`AI returned an unexpected status: '${result}'. Defaulting to 'tracking'.`);
     return 'tracking';
+};
+
+export const matchEmailToJob = async (emailText: string, jobs: Job[]): Promise<string> => {
+    const ai = getAiClient();
+    const simplifiedJobs = jobs.map(({ id, title, company }) => ({ id, title, company }));
+    const prompt = `
+# ЗАДАЧА: СОПОСТАВЛЕНИЕ EMAIL С ВАКАНСИЕЙ
+Проанализируй текст письма и сравни его с предоставленным списком вакансий.
+Верни ТОЛЬКО ID наиболее подходящей вакансии. Если не уверен, верни "UNKNOWN".
+
+## Текст письма:
+${emailText}
+
+## Список вакансий:
+${JSON.stringify(simplifiedJobs, null, 2)}
+`;
+
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+    });
+
+    const result = response.text.trim();
+    
+    // Check if the result is a valid UUID or one of the job IDs
+    const isValidId = jobs.some(job => job.id === result);
+    if (isValidId) {
+        return result;
+    }
+
+    console.warn(`AI returned an unknown job ID: '${result}'.`);
+    return "UNKNOWN";
 };

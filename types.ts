@@ -79,6 +79,7 @@ export interface Prompts {
     coverLetter: string;
     hrResponseAnalysis: string;
     shortMessage: string;
+    emailJobMatch: string;
 }
 
 export interface Profile {
@@ -88,4 +89,36 @@ export interface Profile {
     resume: string;
     settings: SearchSettings;
     prompts: Prompts;
+}
+
+// --- Google & Gmail Types ---
+
+export interface GoogleUser {
+    name: string;
+    email: string;
+    picture: string;
+}
+
+export interface GmailMessagePartHeader {
+    name: string;
+    value: string;
+}
+
+export interface GmailMessage {
+    id: string;
+    threadId: string;
+    payload: {
+        headers: GmailMessagePartHeader[];
+        parts: {
+            body: {
+                data: string; // base64 encoded
+            }
+        }[];
+    }
+}
+
+export interface GmailThread {
+    id: string;
+    snippet: string;
+    messages: GmailMessage[];
 }
