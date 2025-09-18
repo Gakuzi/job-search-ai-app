@@ -1,5 +1,6 @@
 import React from 'react';
 import type { User } from 'firebase/auth';
+// FIX: Corrected import path for types
 import type { Profile } from '../types';
 import { SunIcon } from './icons/SunIcon';
 import { MoonIcon } from './icons/MoonIcon';

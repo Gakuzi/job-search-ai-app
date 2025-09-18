@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
+// FIX: Corrected import path for types
 import type { Profile } from '../types';
 import { SparklesIcon } from './icons/SparklesIcon';
 

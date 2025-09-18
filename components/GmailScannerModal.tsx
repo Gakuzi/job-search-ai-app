@@ -1,6 +1,7 @@
 import React from 'react';
 import Modal from './Modal';
 import { SparklesIcon } from './icons/SparklesIcon';
+// FIX: Corrected import path for types
 import type { Email, Job } from '../types';
 
 interface GmailScannerModalProps {

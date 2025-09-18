@@ -1,559 +1,413 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
+import { signOut } from 'firebase/auth';
+import { v4 as uuidv4 } from 'uuid';
 
-import { auth } from './services/firebase';
-import * as firestoreService from './services/firestoreService';
-import * as geminiService from './services/geminiService';
-import * as avitoService from './services/avitoService';
-import * as googleAuth from './services/googleAuthService';
-import * as gmailService from './services/gmailService';
-
-import type { User } from 'firebase/auth';
-import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email } from './types';
-import { AppStatus } from './constants';
-import { useTheme } from './hooks/useTheme';
-
-import AuthGuard from './components/AuthGuard';
 import Sidebar from './components/Sidebar';
 import MainHeader from './components/MainHeader';
 import StatusBar from './components/StatusBar';
 import ScanResults from './components/ScanResults';
 import ApplicationTracker from './components/ApplicationTracker';
-import Modal from './components/Modal';
 import JobDetailModal from './components/JobDetailModal';
+import Modal from './components/Modal';
 import SettingsModal from './components/SettingsModal';
 import SetupWizardModal from './components/SetupWizardModal';
-import HrAnalysisModal from './components/HrAnalysisModal';
 import JobComparisonModal from './components/JobComparisonModal';
+import HrAnalysisModal from './components/HrAnalysisModal';
 import GmailScannerModal from './components/GmailScannerModal';
+import PromptEditorModal from './components/PromptEditorModal';
 import ConfigurationError from './components/ConfigurationError';
+import AuthGuard from './components/AuthGuard';
 
-// Placeholder service for hh.ru, in a real scenario this would be a fleshed-out module.
-const hhServicePlaceholder = {
-    findJobs: async (settings: SearchSettings): Promise<Partial<Job>[]> => {
-        console.warn("hh.ru API is not implemented. Returning mock data.");
-        // This would call the hh.ru API
-        return [
-            { title: `Mock HH Job for ${settings.positions}`, company: 'Mock Company', location: settings.location, salary: `${settings.salary}+`, description: 'This is a mock job description from a placeholder service.', url: '#', sourcePlatform: 'hh.ru' }
-        ];
-    }
+import { useTheme } from './hooks/useTheme';
+import { useLocalStorage } from './hooks/useLocalStorage';
+
+import { auth, firebaseConfig } from './services/firebase';
+import * as firestore from './services/firestoreService';
+import * as gemini from './services/geminiService';
+// hhService is not provided, so we're using a mock for now.
+// import { findJobsOnHH } from './services/hhService';
+import { findJobsOnAvitoAPI } from './services/avitoService';
+import * as gAuth from './services/googleAuthService';
+import * as gMail from './services/gmailService';
+import { getApiKey } from './services/apiKeyService';
+
+import type { Job, Profile, KanbanStatus, GoogleUser, Email, PromptTemplate, SearchSettings } from './types';
+import { AppStatus } from './constants';
+
+// Mocking hhService as it's not provided in the file list.
+const findJobsOnHH = async (settings: SearchSettings): Promise<Omit<Job, 'id' | 'userId' | 'profileId' | 'kanbanStatus'>[]> => {
+    console.warn("`hhService` is not implemented. Returning empty array for hh.ru jobs.");
+    return Promise.resolve([]);
 };
 
-const App: React.FC = () => {
-    const [user, authLoading] = useAuthState(auth);
-    const [theme, setTheme] = useTheme();
+const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy');
+const isGoogleConfigured = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID && !(import.meta as any).env.VITE_GOOGLE_CLIENT_ID.includes('your-');
 
-    // App State
+const DEFAULT_PROMPTS: PromptTemplate[] = [
+    { id: 'adapt_resume', name: 'Адаптация резюме', description: 'Изменяет резюме под конкретную вакансию', template: "Адаптируй следующее резюме, чтобы оно максимально соответствовало требованиям вакансии. Сделай акцент на ключевых навыках и опыте, которые релевантны для этой должности. Не выдумывай опыт, которого нет в исходном резюме. Просто переформулируй и расставь акценты. Ответ должен быть только текстом адаптированного резюме, без лишних вступлений и заключений.\n\nИсходное резюме:\n---\n{{profile.resume}}\n---\n\nВакансия:\n---\nДолжность: {{job.title}} в {{job.company}}\nОписание: {{job.description}}\n---" },
+    { id: 'cover_letter', name: 'Сопроводительное письмо', description: 'Генерирует сопроводительное письмо для отклика', template: "Напиши сопроводительное письмо для отклика на вакансию. Письмо должно быть профессиональным, вежливым и кратким (3-4 абзаца). Используй информацию из резюме кандидата, чтобы показать его релевантность. Обращайся к HR-менеджеру компании. Если имя неизвестно, используй 'Уважаемый HR-менеджер'. В конце вырази готовность пройти собеседование. Ответ должен быть только текстом письма.\n\nРезюме кандидата:\n---\n{{profile.resume}}\n---\n\nВакансия:\n---\nДолжность: {{job.title}}\nКомпания: {{job.company}}\nОписание: {{job.description}}\n---" },
+];
+
+const App: React.FC = () => {
+    const [theme, setTheme] = useTheme();
+    const [user, loadingAuth] = useAuthState(auth);
+
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
     const [statusMessage, setStatusMessage] = useState('');
     const [profiles, setProfiles] = useState<Profile[]>([]);
-    const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
+    const [activeProfileId, setActiveProfileId] = useLocalStorage<string | null>('activeProfileId', null);
     const [jobs, setJobs] = useState<Job[]>([]);
     const [scannedJobs, setScannedJobs] = useState<Job[]>([]);
 
-    // Modals State
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [viewingJob, setViewingJob] = useState<Job | null>(null);
-    const [adaptingJob, setAdaptingJob] = useState<Job | null>(null);
-    const [generatingEmailJob, setGeneratingEmailJob] = useState<Job | null>(null);
-    const [preparingInterviewJob, setPreparingInterviewJob] = useState<Job | null>(null);
-    const [analyzingResponseJob, setAnalyzingResponseJob] = useState<Job | null>(null);
-    const [comparingJobs, setComparingJobs] = useState<Job[]>([]);
-    const [isGmailScannerOpen, setIsGmailScannerOpen] = useState(false);
-
-    // AI-generated content state
-    const [modalContent, setModalContent] = useState('');
-    const [isModalLoading, setIsModalLoading] = useState(false);
-
-    // Gmail/Google State
-    const [isGapiReady, setIsGapiReady] = useState(false);
-    const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-    const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+    const [activeModal, setActiveModal] = useState<string | null>(null);
+    const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+    const [jobsToCompare, setJobsToCompare] = useState<Job[]>([]);
+    const [scannedEmails, setScannedEmails] = useState<Email[]>([]);
+    const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
+    const [templateToEdit, setTemplateToEdit] = useState<PromptTemplate | null>(null);
+    const [aiResult, setAiResult] = useState('');
+    
     const [tokenClient, setTokenClient] = useState<any>(null);
-    const [gmailEmails, setGmailEmails] = useState<Email[]>([]);
-    const [gmailAnalysisJobId, setGmailAnalysisJobId] = useState<string | null>(null);
+    const [isGapiReady, setIsGapiReady] = useState(false);
+    const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
     
-    // Config check state
-    const [isFirebaseOk, setIsFirebaseOk] = useState(false);
-    const [isGoogleOk, setIsGoogleOk] = useState(false);
-    const [isConfigChecked, setIsConfigChecked] = useState(false);
-    
-    // ---- Effects ----
-    
-    // Check configuration on startup
-    useEffect(() => {
-        const firebaseApiKey = (import.meta as any).env.VITE_FIREBASE_API_KEY;
-        const geminiApiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-        const googleClientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
-        
-        setIsFirebaseOk(!!firebaseApiKey && !!geminiApiKey && !firebaseApiKey.includes('...'));
-        setIsGoogleOk(!!googleClientId && !googleClientId.includes('...'));
-        setIsConfigChecked(true);
-    }, []);
+    const [promptTemplates, setPromptTemplates] = useLocalStorage<PromptTemplate[]>('promptTemplates', DEFAULT_PROMPTS);
 
-    // Initialize Google API Client
-    useEffect(() => {
-        const initGoogle = async () => {
-            try {
-                await googleAuth.gapiLoad('client:oauth2');
-                await googleAuth.initGapiClient();
-                setIsGapiReady(true);
-                const client = googleAuth.initTokenClient(async (resp: any) => {
-                    if (resp.error) {
-                        console.error('Google Auth Error:', resp.error);
-                        setIsGoogleConnected(false);
-                        return;
-                    }
-                    setIsGoogleConnected(true);
-                    // Fetch user info
-                    const userInfoResp = await gapi.client.oauth2.userinfo.get();
-                    setGoogleUser(userInfoResp.result);
-                });
-                setTokenClient(client);
-            } catch (error) {
-                console.error("Error initializing Google API", error);
-                setStatus(AppStatus.Error);
-                setStatusMessage('Не удалось инициализировать Google API.');
-            }
-        };
-        if(isConfigChecked && isGoogleOk) {
-            initGoogle();
-        }
-    }, [isConfigChecked, isGoogleOk]);
-    
+    const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
+    const isGoogleConnected = !!gAuth.gapi?.client?.getToken();
 
-    // Subscribe to profiles
     useEffect(() => {
-        if (user) {
-            const unsubscribe = firestoreService.getProfiles(user.uid, (loadedProfiles) => {
-                setProfiles(loadedProfiles);
-                if (loadedProfiles.length > 0) {
-                    // If no active profile or active is deleted, set to first
-                    if (!activeProfile || !loadedProfiles.find(p => p.id === activeProfile.id)) {
-                        setActiveProfile(loadedProfiles[0]);
-                    }
-                } else {
-                    setActiveProfile(null);
-                }
-            });
-            return () => unsubscribe();
-        } else {
-            setProfiles([]);
-            setActiveProfile(null);
-        }
+        if (!user) return;
+        const unsubscribe = firestore.getProfiles(user.uid, setProfiles);
+        return () => unsubscribe();
     }, [user]);
 
-    // Subscribe to jobs for active profile
     useEffect(() => {
-        if (user && activeProfile) {
-            const unsubscribe = firestoreService.getJobs(user.uid, activeProfile.id, setJobs);
+        if (profiles.length > 0 && (!activeProfileId || !profiles.some(p => p.id === activeProfileId))) {
+            setActiveProfileId(profiles[0].id);
+        }
+    }, [profiles, activeProfileId, setActiveProfileId]);
+
+    useEffect(() => {
+        if (user && activeProfileId) {
+            const unsubscribe = firestore.getJobs(user.uid, activeProfileId, setJobs);
             return () => unsubscribe();
         } else {
             setJobs([]);
         }
-    }, [user, activeProfile]);
+    }, [user, activeProfileId]);
 
-
-    // ---- Handlers ----
-    
-    const showStatus = (status: AppStatus, message: string, duration = 3000) => {
-        setStatus(status);
-        setStatusMessage(message);
-        if(status !== AppStatus.Loading) {
-            setTimeout(() => {
-                setStatus(AppStatus.Idle);
-                setStatusMessage('');
-            }, duration);
-        }
-    };
-
-    const handleSearch = useCallback(async () => {
-        if (!activeProfile) {
-            showStatus(AppStatus.Error, "Сначала создайте и выберите профиль в настройках.");
-            return;
-        }
-
-        showStatus(AppStatus.Loading, "Ищем вакансии на платформах...");
-        setScannedJobs([]); // Clear previous results
-
-        try {
-            // This is a simplified search. A real app would run these in parallel.
-            const rawJobs = await hhServicePlaceholder.findJobs(activeProfile.searchSettings);
-
-            if (activeProfile.searchSettings.platforms.avito && activeProfile.avitoClientId && activeProfile.avitoClientSecret) {
-                const avitoRawJobs = await avitoService.findJobsOnAvitoAPI(activeProfile.searchSettings, activeProfile.avitoClientId, activeProfile.avitoClientSecret);
-                rawJobs.push(...avitoRawJobs);
+    useEffect(() => {
+        const initGoogleApis = async () => {
+            try {
+                await gAuth.gapiLoad('client:oauth2');
+                await gAuth.initGapiClient();
+                const client = gAuth.initTokenClient(async (resp: any) => {
+                    if (resp.error) return;
+                    try {
+                        const profile = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                            headers: { 'Authorization': `Bearer ${resp.access_token}` }
+                        }).then(res => res.json());
+                        setGoogleUser({ name: profile.name, email: profile.email, picture: profile.picture });
+                    } catch (e) { console.error(e); }
+                });
+                setTokenClient(client);
+                setIsGapiReady(true);
+            } catch (e) {
+                setStatus(AppStatus.Error);
+                setStatusMessage("Не удалось инициализировать API Google.");
             }
-
-            if(rawJobs.length === 0) {
-                showStatus(AppStatus.Success, "Новых вакансий не найдено.");
-                return;
-            }
-
-            showStatus(AppStatus.Loading, `Анализируем ${rawJobs.length} вакансий с помощью ИИ...`);
-
-            const enrichedJobsPromises = rawJobs.map(rawJob =>
-                geminiService.analyzeAndEnrichJob(rawJob, activeProfile)
-            );
-            
-            const settledJobs = await Promise.allSettled(enrichedJobsPromises);
-            
-            const newJobs = settledJobs
-                .filter(result => result.status === 'fulfilled')
-                .map(result => (result as PromiseFulfilledResult<Job>).value);
-
-            // Filter out jobs that are already being tracked
-            const existingUrls = new Set(jobs.map(j => j.url));
-            const uniqueNewJobs = newJobs.filter(j => !existingUrls.has(j.url));
-
-            setScannedJobs(uniqueNewJobs.map(j => ({...j, id: `temp-${Math.random()}`, kanbanStatus: 'new' })));
-            showStatus(AppStatus.Success, `Найдено ${uniqueNewJobs.length} новых вакансий.`);
-
-        } catch (error: any) {
-            showStatus(AppStatus.Error, error.message || "Произошла ошибка при поиске.");
-        }
-    }, [activeProfile, jobs]);
-    
-    const handleSaveJobs = useCallback(async (jobsToSave: Job[]) => {
-        if (!user || !activeProfile) return;
-        
-        const jobsToAdd = jobsToSave.map(({ id, ...rest }) => ({...rest, userId: user.uid, profileId: activeProfile.id, kanbanStatus: 'new'}) as Omit<Job, 'id'>) ;
-        await firestoreService.addJobsBatch(user.uid, activeProfile.id, jobsToAdd);
-        
-        // Remove saved jobs from scanned list
-        const savedIds = new Set(jobsToSave.map(j => j.id));
-        setScannedJobs(prev => prev.filter(j => !savedIds.has(j.id)));
-        showStatus(AppStatus.Success, `${jobsToSave.length} вакансий добавлено в трекер.`);
-    }, [user, activeProfile]);
-
-    const handleDismissScannedJob = (jobId: string) => {
-        setScannedJobs(prev => prev.filter(j => j.id !== jobId));
-    };
-    
-    const handleUpdateJobStatus = useCallback((jobId: string, newStatus: KanbanStatus) => {
-        firestoreService.updateJob(jobId, { kanbanStatus: newStatus });
+        };
+        if (isGoogleConfigured) initGoogleApis();
     }, []);
-    
-    // --- AI Action Handlers ---
-    const handleAdaptResume = async (job: Job) => {
+
+    const runAIAction = useCallback(async (action: Promise<string>) => {
+        setActiveModal('loading-ai');
+        try {
+            const result = await action;
+            setAiResult(result);
+            setActiveModal('ai-result');
+        } catch (error) {
+            console.error("AI Action Error:", error);
+            const message = error instanceof Error ? error.message : "Unknown AI error";
+            setAiResult(`Произошла ошибка: ${message}`);
+            setActiveModal('ai-result');
+        }
+    }, []);
+
+    const handleLogout = () => {
+        signOut(auth);
+        setActiveProfileId(null);
+    };
+
+    const handleSearch = async () => {
         if (!activeProfile) return;
-        setAdaptingJob(job);
-        setIsModalLoading(true);
+        setStatus(AppStatus.Loading);
+        setStatusMessage('Ищем вакансии...');
+        setScannedJobs([]);
+        setActiveModal('scanResults');
+
         try {
-            const content = await geminiService.adaptResumeForJob(job, activeProfile);
-            setModalContent(content);
-        } catch (error: any) {
-            setModalContent(`Ошибка: ${error.message}`);
-        } finally {
-            setIsModalLoading(false);
-        }
-    };
+            let foundJobs: Omit<Job, 'id' | 'userId' | 'profileId' | 'kanbanStatus'>[] = [];
+            const settings = activeProfile.searchSettings;
 
-    const handleGenerateEmail = async (job: Job) => {
-        if (!activeProfile) return;
-        setGeneratingEmailJob(job);
-        setIsModalLoading(true);
-        try {
-            const content = await geminiService.generateCoverLetter(job, activeProfile);
-            setModalContent(content);
-        } catch (error: any) {
-            setModalContent(`Ошибка: ${error.message}`);
-        } finally {
-            setIsModalLoading(false);
-        }
-    };
-    
-    const handlePrepareForInterview = async (job: Job) => {
-        if (!activeProfile) return;
-        setPreparingInterviewJob(job);
-        setIsModalLoading(true);
-        try {
-            const content = await geminiService.prepareForInterview(job, activeProfile);
-            setModalContent(content);
-        } catch (error: any) {
-            setModalContent(`Ошибка: ${error.message}`);
-        } finally {
-            setIsModalLoading(false);
-        }
-    };
-    
-    const handleAnalyzeResponse = (job: Job) => {
-        setAnalyzingResponseJob(job);
-    };
-    
-    const executeResponseAnalysis = async (emailText: string) => {
-        if (!analyzingResponseJob) return;
-        
-        setIsModalLoading(true);
-        try {
-            const { newStatus, analysis } = await geminiService.analyzeHrResponse(emailText, analyzingResponseJob);
-            firestoreService.updateJob(analyzingResponseJob.id, { kanbanStatus: newStatus });
-            showStatus(AppStatus.Success, `Статус вакансии обновлен на "${newStatus}" на основе анализа.`);
-        } catch (error: any) {
-            showStatus(AppStatus.Error, error.message);
-        } finally {
-            setIsModalLoading(false);
-            setAnalyzingResponseJob(null);
-        }
-    }
-
-    const handleCompareJobs = async (jobsToCompare: Job[]) => {
-        if (!activeProfile) return;
-        setComparingJobs(jobsToCompare);
-        setIsModalLoading(true);
-        try {
-            const content = await geminiService.compareJobs(jobsToCompare, activeProfile);
-            setModalContent(content);
-        } catch(error: any) {
-            setModalContent(`Ошибка: ${error.message}`);
-        } finally {
-            setIsModalLoading(false);
-        }
-    };
-    
-    // --- Profile Handlers ---
-    
-    const handleFinishWizard = async (profileData: Omit<Profile, 'id' | 'userId'>) => {
-        if (!user) return;
-        await firestoreService.addProfile(user.uid, profileData);
-        // The useEffect will pick up the new profile and set it as active.
-    };
-    
-    const handleAddProfile = async (profileData: Omit<Profile, 'id' | 'userId'>) => {
-        if (!user) return;
-        await firestoreService.addProfile(user.uid, profileData);
-    };
-
-    const handleUpdateProfile = (profileId: string, updates: Partial<Profile>) => {
-        firestoreService.updateProfile(profileId, updates);
-    };
-
-    const handleDeleteProfile = async (profileId: string) => {
-        await firestoreService.deleteProfile(profileId);
-        // Dependent jobs should be cleaned up via a Firebase Function in a real app.
-    };
-
-    // --- Gmail Handlers ---
-    
-    const handleGoogleConnect = () => tokenClient?.requestAccessToken({ prompt: '' });
-    const handleGoogleDisconnect = () => {
-        googleAuth.revokeToken();
-        setIsGoogleConnected(false);
-        setGoogleUser(null);
-    };
-
-    const handleScanReplies = async () => {
-        setIsGmailScannerOpen(true);
-        setIsModalLoading(true);
-        setGmailAnalysisJobId(null);
-        try {
-            const emails = await gmailService.listMessages(25);
-            setGmailEmails(emails);
-        } catch (error: any) {
-            showStatus(AppStatus.Error, error.message);
-            setGmailEmails([]);
-        } finally {
-            setIsModalLoading(false);
-        }
-    };
-
-    const handleAnalyzeGmailReply = async (emailText: string) => {
-        if (!activeProfile) return;
-        setGmailAnalysisJobId('loading');
-        try {
-            const trackedJobs = jobs.filter(j => ['tracking', 'interview'].includes(j.kanbanStatus));
-            const result = await geminiService.findJobReplyInEmails([{ body: emailText, from: '', subject: '' }], trackedJobs);
-
-            if (result) {
-                await firestoreService.updateJob(result.jobToUpdate.id, { kanbanStatus: result.newStatus });
-                setGmailAnalysisJobId(result.jobToUpdate.id);
-                 showStatus(AppStatus.Success, `Статус для "${result.jobToUpdate.title}" обновлен!`);
-            } else {
-                setGmailAnalysisJobId('not_found');
+            if (settings.platforms.hh) {
+                const hhJobs = await findJobsOnHH(settings);
+                foundJobs = [...foundJobs, ...hhJobs];
             }
-        } catch (error: any) {
-            showStatus(AppStatus.Error, error.message);
-            setGmailAnalysisJobId(null);
+            if (settings.platforms.avito) {
+                const clientId = await getApiKey('avito_client_id');
+                const clientSecret = await getApiKey('avito_client_secret');
+                if (clientId && clientSecret) {
+                    const avitoJobs = await findJobsOnAvitoAPI(settings, clientId, clientSecret);
+                    foundJobs = [...foundJobs, ...avitoJobs];
+                } else {
+                     setStatusMessage('Ключи API для Avito не настроены. Пропускаем...');
+                }
+            }
+
+            setStatusMessage(`Найдено ${foundJobs.length} вакансий. Анализируем с помощью ИИ...`);
+            const analyzedJobs = await Promise.all(foundJobs.map(async job => {
+                const matchAnalysis = await gemini.analyzeJobWithResume(job, activeProfile.resume);
+                return { ...job, id: uuidv4(), matchAnalysis } as Job;
+            }));
+
+            setScannedJobs(analyzedJobs);
+            setStatus(AppStatus.Success);
+            setStatusMessage(`Готово! Найдено и проанализировано ${analyzedJobs.length} вакансий.`);
+
+        } catch (error) {
+            console.error(error);
+            setStatus(AppStatus.Error);
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            setStatusMessage(`Ошибка при поиске: ${message}`);
         }
     };
     
-    const handleQuickApplyEmail = async (job: Job) => {
-        if (!googleUser?.email || !job.contacts?.email || !activeProfile) return;
-        setIsModalLoading(true);
-        try {
-            const letter = await geminiService.generateCoverLetter(job, activeProfile);
-            await gmailService.sendEmail({
-                to: job.contacts.email,
-                from: googleUser.email,
-                fromName: googleUser.name,
-                subject: `Отклик на вакансию: ${job.title}`,
-                body: `${letter}\n\n---Резюме---\n${activeProfile.resume}`,
-            });
-            showStatus(AppStatus.Success, `Письмо на вакансию "${job.title}" успешно отправлено!`);
-        } catch (error: any) {
-            showStatus(AppStatus.Error, `Не удалось отправить письмо: ${error.message}`);
-        } finally {
-            setIsModalLoading(false);
-        }
+    const handleSaveJobs = (jobsToSave: Job[]) => {
+        if (!user || !activeProfileId) return;
+        jobsToSave.forEach(job => {
+            const jobData: Omit<Job, 'id'> = {
+                ...job,
+                userId: user.uid,
+                profileId: activeProfileId,
+                kanbanStatus: 'new'
+            };
+            firestore.addJob(user.uid, activeProfileId, jobData);
+        });
+        setScannedJobs(prev => prev.filter(j => !jobsToSave.find(s => s.id === j.id)));
+    };
+    
+    const handleAdaptResume = (job: Job) => {
+        if (!activeProfile) return;
+        setSelectedJob(job);
+        runAIAction(gemini.adaptResumeForJob(job, activeProfile.resume));
     };
 
-    // --- Render Logic ---
-    
-    if (isConfigChecked && (!isFirebaseOk || !isGoogleOk)) {
-        return <ConfigurationError isFirebaseOk={isFirebaseOk} isGoogleOk={isGoogleOk} />;
+    const handleGenerateEmail = (job: Job) => {
+        if (!activeProfile) return;
+        setSelectedJob(job);
+        runAIAction(gemini.generateCoverLetter(job, activeProfile.resume));
     }
-
-    const closeModal = () => {
-        setAdaptingJob(null);
-        setGeneratingEmailJob(null);
-        setPreparingInterviewJob(null);
-        setComparingJobs([]);
-        setModalContent('');
-        setIsModalLoading(false);
+    
+    const handlePrepareForInterview = (job: Job) => {
+        if (!activeProfile) return;
+        setSelectedJob(job);
+        runAIAction(gemini.prepareForInterview(job, activeProfile.resume));
+    }
+    
+    const handleAnalyzeResponse = async (emailText: string) => {
+        if (!activeProfile) return;
+        setActiveModal('loading-ai');
+        try {
+            const result = await gemini.analyzeHrResponse(emailText, jobs);
+            await firestore.updateJob(result.jobId, { kanbanStatus: result.newStatus });
+            setStatus(AppStatus.Success);
+            setStatusMessage(`Статус вакансии обновлен на "${result.newStatus}"`);
+        } catch (error) {
+            console.error(error);
+            setStatus(AppStatus.Error);
+            setStatusMessage("Не удалось проанализировать ответ.");
+        } finally {
+            setActiveModal(null);
+        }
+    };
+    
+    const handleCompareJobs = (jobsToCompare: Job[]) => {
+        if (!activeProfile) return;
+        setJobsToCompare(jobsToCompare);
+        runAIAction(gemini.compareJobs(jobsToCompare, activeProfile.resume));
+    };
+    
+    const handleScanReplies = async () => {
+        setActiveModal('gmail-scanner');
+        setScannedEmails([]);
+        setAnalysisJobId(null);
+        try {
+            const emails = await gMail.listMessages(30);
+            setScannedEmails(emails);
+        } catch (error) {
+            console.error(error);
+            setActiveModal(null);
+            setStatus(AppStatus.Error);
+            setStatusMessage(error instanceof Error ? error.message : "Ошибка при сканировании почты.");
+        }
     };
 
-    const renderModal = () => {
-        const job = adaptingJob || generatingEmailJob || preparingInterviewJob;
-        if (job) {
-            let title = '';
-            if (adaptingJob) title = `Резюме для "${job.title}"`;
-            if (generatingEmailJob) title = `Сопроводительное письмо для "${job.title}"`;
-            if (preparingInterviewJob) title = `Подготовка к интервью для "${job.title}"`;
-
-            return (
-                <Modal title={title} onClose={closeModal} isLoading={isModalLoading}>
-                    <div className="prose prose-slate dark:prose-invert max-w-none whitespace-pre-wrap">
-                        {modalContent}
-                    </div>
-                </Modal>
-            );
+    const handleAnalyzeScannedReply = async (emailText: string) => {
+        setAnalysisJobId('loading');
+        try {
+            const result = await gemini.analyzeHrResponse(emailText, jobs);
+            await firestore.updateJob(result.jobId, { kanbanStatus: result.newStatus });
+            setAnalysisJobId(result.jobId);
+        } catch (error) {
+            console.error("Failed to match email to job:", error);
+            setAnalysisJobId('not_found');
         }
-        if (comparingJobs.length > 0) {
-            return isModalLoading ? (
-                 <Modal title="Сравнение вакансий" onClose={closeModal} isLoading={true}><div/></Modal>
-            ) : (
-                <JobComparisonModal jobs={comparingJobs} onClose={closeModal} />
-            )
+    };
+    
+    const handleFinishSetup = async (profileData: Omit<Profile, 'id' | 'userId'>) => {
+        if (user) {
+            await firestore.addProfile(user.uid, profileData);
+            setActiveModal(null);
         }
-        return null;
+    };
+    
+    const handleUpdateProfile = (updates: Partial<Profile>) => {
+        if (activeProfile) {
+            firestore.updateProfile(activeProfile.id, updates);
+        }
     };
 
+    const handleUpdatePrompt = (id: string, newTemplate: string) => {
+        setPromptTemplates(prev => prev.map(p => p.id === id ? { ...p, template: newTemplate } : p));
+    };
 
+    if (!isFirebaseConfigured || !isGoogleConfigured) {
+        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
+    }
+    
     return (
-        <AuthGuard user={user} loading={authLoading}>
-            <div className={`flex h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans`}>
-                <Sidebar
-                    theme={theme}
-                    setTheme={setTheme}
-                    user={user}
-                    onLogout={() => auth.signOut()}
-                    onOpenSettings={() => setIsSettingsOpen(true)}
+        <AuthGuard user={user} loading={loadingAuth}>
+            <div className="flex h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                <Sidebar 
+                    theme={theme} 
+                    setTheme={setTheme} 
+                    user={user} 
+                    onLogout={handleLogout}
+                    onOpenSettings={() => setActiveModal('settings')}
                     profiles={profiles}
                     activeProfile={activeProfile}
-                    onSwitchProfile={(id) => setActiveProfile(profiles.find(p => p.id === id) || null)}
+                    onSwitchProfile={setActiveProfileId}
                 />
-
-                <main className="flex-1 flex flex-col p-6 overflow-y-auto">
-                    {user && !authLoading && profiles.length === 0 && (
-                        <SetupWizardModal onFinish={handleFinishWizard} />
-                    )}
-
-                    {activeProfile ? (
-                        <>
-                            <MainHeader onSearch={handleSearch} status={status} />
-                            {statusMessage && <StatusBar status={status} message={statusMessage} />}
-                            
-                            <div className="space-y-8">
-                                <ScanResults
-                                    jobs={scannedJobs}
-                                    onSaveJobs={handleSaveJobs}
-                                    onDismissJob={handleDismissScannedJob}
-                                    onViewDetails={setViewingJob}
-                                    onCompareJobs={handleCompareJobs}
-                                />
-                                <ApplicationTracker
-                                    jobs={jobs}
-                                    profiles={profiles}
-                                    onUpdateJobStatus={handleUpdateJobStatus}
-                                    onViewDetails={setViewingJob}
-                                    onAdaptResume={handleAdaptResume}
-                                    onGenerateEmail={handleGenerateEmail}
-                                    onQuickApplyEmail={handleQuickApplyEmail}
-                                    isGoogleConnected={isGoogleConnected}
-                                    isGapiReady={isGapiReady}
-                                    onScanReplies={handleScanReplies}
-                                    onRefreshStatuses={() => showStatus(AppStatus.Idle, "Функция в разработке")}
-                                    onCompareJobs={handleCompareJobs}
-                                />
-                            </div>
-                        </>
-                    ) : (
-                        !authLoading && profiles.length > 0 && (
-                           <div className="text-center p-8 m-auto bg-white dark:bg-slate-800 rounded-lg shadow-md">
-                                <h3 className="text-xl font-semibold">Профиль не выбран</h3>
-                                <p className="text-slate-500 dark:text-slate-400 mt-2">
-                                    Выберите профиль в боковой панели, чтобы начать работу.
-                                </p>
-                           </div>
-                        )
-                    )}
-                </main>
-
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <main className="flex-1 p-6 overflow-y-auto">
+                        <MainHeader onSearch={handleSearch} status={status} />
+                        {(status === AppStatus.Error || status === AppStatus.Success) && <StatusBar status={status} message={statusMessage} />}
+                        <ApplicationTracker 
+                            jobs={jobs}
+                            profiles={profiles}
+                            onUpdateJobStatus={(jobId, newStatus) => firestore.updateJob(jobId, { kanbanStatus: newStatus })}
+                            onViewDetails={(job) => { setSelectedJob(job); setActiveModal('job-details'); }}
+                            onAdaptResume={handleAdaptResume}
+                            onGenerateEmail={handleGenerateEmail}
+                            onQuickApplyEmail={async () => {}} // Placeholder
+                            isGoogleConnected={isGoogleConnected}
+                            isGapiReady={isGapiReady}
+                            onScanReplies={handleScanReplies}
+                            onRefreshStatuses={async () => {}} // Placeholder
+                            onCompareJobs={handleCompareJobs}
+                        />
+                    </main>
+                </div>
+                
                 {/* Modals */}
-                {isSettingsOpen && activeProfile && (
-                    <SettingsModal
-                        isOpen={isSettingsOpen}
-                        onClose={() => setIsSettingsOpen(false)}
-                        profiles={profiles}
-                        activeProfile={activeProfile}
-                        onUpdateProfile={handleUpdateProfile}
-                        onAddProfile={handleAddProfile}
-                        onSwitchProfile={(id) => setActiveProfile(profiles.find(p => p.id === id) || null)}
-                        onDeleteProfile={handleDeleteProfile}
-                        isGoogleConnected={isGoogleConnected}
-                        googleUser={googleUser}
-                        onGoogleConnect={handleGoogleConnect}
-                        onGoogleDisconnect={handleGoogleDisconnect}
+                {user && profiles.length === 0 && <SetupWizardModal onFinish={handleFinishSetup} />}
+
+                {activeModal === 'scanResults' && (
+                    <ScanResults
+                        jobs={scannedJobs}
+                        onSaveJobs={handleSaveJobs}
+                        onDismissJob={(jobId) => setScannedJobs(prev => prev.filter(j => j.id !== jobId))}
+                        onViewDetails={(job) => { setSelectedJob(job); setActiveModal('job-details'); }}
+                        onCompareJobs={handleCompareJobs}
                     />
                 )}
                 
-                {viewingJob && activeProfile && (
+                {activeModal === 'job-details' && selectedJob && (
                     <JobDetailModal
-                        job={viewingJob}
-                        onClose={() => setViewingJob(null)}
-                        onUpdateJob={firestoreService.updateJob}
+                        job={selectedJob}
+                        onClose={() => setActiveModal(null)}
+                        onUpdateJob={(jobId, updates) => firestore.updateJob(jobId, updates)}
                         onAdaptResume={handleAdaptResume}
                         onGenerateEmail={handleGenerateEmail}
                         onPrepareForInterview={handlePrepareForInterview}
-                        onAnalyzeResponse={handleAnalyzeResponse}
-                        onQuickApplyEmail={handleQuickApplyEmail}
-                        onQuickApplyWhatsapp={async () => showStatus(AppStatus.Idle, "Функция в разработке")}
-                        onQuickApplyTelegram={async () => showStatus(AppStatus.Idle, "Функция в разработке")}
+                        onAnalyzeResponse={(job) => { setSelectedJob(job); setActiveModal('hr-analysis'); }}
+                        onQuickApplyEmail={async () => {}}
+                        onQuickApplyWhatsapp={async () => {}}
+                        onQuickApplyTelegram={async () => {}}
                         isGoogleConnected={isGoogleConnected}
                         isGapiReady={isGapiReady}
                     />
                 )}
                 
-                {analyzingResponseJob && (
-                    <HrAnalysisModal
-                        job={analyzingResponseJob}
-                        onClose={() => setAnalyzingResponseJob(null)}
-                        onAnalyze={executeResponseAnalysis}
+                {activeModal === 'hr-analysis' && selectedJob && (
+                    <HrAnalysisModal 
+                        job={selectedJob} 
+                        onClose={() => setActiveModal(null)} 
+                        onAnalyze={handleAnalyzeResponse} 
                     />
                 )}
-
-                {isGmailScannerOpen && (
-                    <GmailScannerModal
-                        emails={gmailEmails}
+                
+                {activeModal === 'gmail-scanner' && (
+                    <GmailScannerModal 
+                        isLoading={!scannedEmails.length}
+                        emails={scannedEmails}
                         jobs={jobs}
-                        analysisJobId={gmailAnalysisJobId}
-                        isLoading={isModalLoading}
-                        onClose={() => setIsGmailScannerOpen(false)}
-                        onAnalyzeReply={handleAnalyzeGmailReply}
+                        analysisJobId={analysisJobId}
+                        onClose={() => setActiveModal(null)}
+                        onAnalyzeReply={handleAnalyzeScannedReply}
                     />
                 )}
 
-                {renderModal()}
+                {activeModal === 'settings' && activeProfile && (
+                     <SettingsModal
+                        profile={activeProfile}
+                        onClose={() => setActiveModal(null)}
+                        onUpdateProfile={handleUpdateProfile}
+                        onDeleteProfile={() => {}}
+                        onAddProfile={(name) => {}}
+                        isGoogleConnected={isGoogleConnected}
+                        googleUser={googleUser}
+                        onGoogleConnect={() => gAuth.getToken(tokenClient)}
+                        onGoogleDisconnect={() => { gAuth.revokeToken(); setGoogleUser(null); }}
+                        promptTemplates={promptTemplates}
+                        onUpdatePrompt={handleUpdatePrompt}
+                        onEditPrompt={(template) => { setTemplateToEdit(template); setSelectedJob(jobs[0]); }}
+                    />
+                )}
+                
+                {(activeModal === 'ai-result' || activeModal === 'loading-ai') && (
+                    <Modal 
+                        title="Результат от ИИ" 
+                        onClose={() => setActiveModal(null)} 
+                        isLoading={activeModal === 'loading-ai'}
+                    >
+                        <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">{aiResult}</div>
+                    </Modal>
+                )}
+
+                {templateToEdit && activeProfile && selectedJob && (
+                    <PromptEditorModal
+                        template={templateToEdit}
+                        job={selectedJob}
+                        profile={activeProfile}
+                        onClose={() => setTemplateToEdit(null)}
+                        onSave={handleUpdatePrompt}
+                    />
+                )}
+
             </div>
         </AuthGuard>
     );

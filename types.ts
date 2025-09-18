@@ -1,3 +1,50 @@
+export type KanbanStatus = 'new' | 'tracking' | 'interview' | 'offer' | 'archive';
+
+export const kanbanStatusMap: Record<KanbanStatus, string> = {
+    new: 'Новые',
+    tracking: 'Отслеживаются',
+    interview: 'Собеседование',
+    offer: 'Оффер',
+    archive: 'Архив'
+};
+
+export interface Interaction {
+    id: string;
+    type: 'note' | 'email_sent' | 'status_change' | 'call' | 'reply_received';
+    content: string;
+    timestamp: string; // ISO 8601 format
+}
+
+export interface JobContacts {
+    email?: string;
+    phone?: string;
+    telegram?: string;
+}
+
+export interface Job {
+    id: string;
+    userId: string;
+    profileId: string;
+    kanbanStatus: KanbanStatus;
+    title: string;
+    company: string;
+    location: string;
+    salary: string;
+    url: string;
+    description: string;
+    responsibilities: string[];
+    requirements: string[];
+    matchAnalysis?: string;
+    sourcePlatform: string;
+    companyRating?: number;
+    companyReviewSummary?: string;
+    notes?: string;
+    history?: Interaction[];
+    contacts?: JobContacts;
+    createdAt?: any; // for firestore serverTimestamp
+    isArchived?: boolean; // To check if vacancy is closed
+}
+
 export interface SearchSettings {
     platforms: {
         hh: boolean;
@@ -15,60 +62,14 @@ export interface Profile {
     id: string;
     userId: string;
     name: string;
-    resume: string; // The text content of the resume
+    resume: string;
     searchSettings: SearchSettings;
-    // For Avito integration
-    avitoClientId?: string;
-    avitoClientSecret?: string;
 }
 
-export type KanbanStatus = 'new' | 'tracking' | 'interview' | 'offer' | 'archive';
-
-export const kanbanStatusMap: Record<KanbanStatus, string> = {
-    new: 'Новые',
-    tracking: 'Отслеживаю',
-    interview: 'Собеседование',
-    offer: 'Оффер',
-    archive: 'Архив',
-};
-
-
-export interface Interaction {
-    id: string;
-    type: 'note' | 'email_sent' | 'status_change' | 'call' | 'response_received' | 'auto_status_update';
-    timestamp: string; // ISO string
-    content: string;
-}
-
-export interface Job {
-    id: string;
-    userId: string;
-    profileId: string;
-    title: string;
-    company: string;
-    salary: string;
-    location: string;
-    description: string;
-    url: string;
-    sourcePlatform: string; // e.g., "hh.ru", "Habr Career", "Avito"
-    
-    // AI-generated fields
-    matchAnalysis?: string;
-    responsibilities: string[];
-    requirements: string[];
-    companyRating?: number;
-    companyReviewSummary?: string;
-    contacts?: {
-        email?: string;
-        phone?: string;
-        telegram?: string;
-    };
-    
-    // Application tracking fields
-    kanbanStatus: KanbanStatus;
-    notes?: string;
-    history?: Interaction[];
-    isActive?: boolean; // For checking if the job posting is still active
+export interface GoogleUser {
+    name: string;
+    email: string;
+    picture: string;
 }
 
 export interface Email {
@@ -79,8 +80,9 @@ export interface Email {
     body: string;
 }
 
-export interface GoogleUser {
+export interface PromptTemplate {
+    id: string;
     name: string;
-    email: string;
-    picture: string;
+    description: string;
+    template: string;
 }

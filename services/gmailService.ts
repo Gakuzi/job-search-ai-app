@@ -4,6 +4,7 @@
 // FIX: Add global declaration for gapi to resolve type errors when @types are not available.
 declare const gapi: any;
 
+// FIX: Corrected import path for types
 import type { Email } from "../types";
 
 interface SendEmailParams {

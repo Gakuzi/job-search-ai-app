@@ -1,4 +1,5 @@
 import React from 'react';
+// FIX: Corrected import path for constants
 import { AppStatus } from '../constants';
 import { SparklesIcon } from './icons/SparklesIcon';
 

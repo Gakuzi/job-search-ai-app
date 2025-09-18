@@ -1,5 +1,7 @@
 
+
 import React from 'react';
+// FIX: Corrected import path for constants
 import { AppStatus } from '../constants';
 
 interface StatusBarProps {

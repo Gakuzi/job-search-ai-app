@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
+// FIX: Corrected import path for types
 import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import { XCircleIcon } from './icons/XCircleIcon';
@@ -119,7 +120,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                             <p className="text-sm text-primary-700 dark:text-primary-300 mt-1">{job.matchAnalysis}</p>
                         </div>
                         <h3>Описание</h3>
-                        <p>{job.description}</p>
+                        <ReactMarkdown>{job.description}</ReactMarkdown>
                         <h3>Обязанности</h3>
                         <ul>
                             {job.responsibilities.map((item, index) => <li key={index}>{item}</li>)}

@@ -1,359 +1,244 @@
 import { GoogleGenAI } from "@google/genai";
-import type { Job, Profile, KanbanStatus } from '../types';
+import type { Job, Profile, PromptTemplate } from '../types';
 
-// The API key is retrieved from environment variables, which is a secure practice.
-const GEMINI_API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY;
+const API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY;
 
-if (!GEMINI_API_KEY) {
-    console.error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your environment variables.");
+if (!API_KEY) {
+    console.error("VITE_GEMINI_API_KEY is not set. Please add it to your environment variables.");
 }
 
-// FIX: Initialize GoogleGenAI with a named apiKey parameter as per the coding guidelines.
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-// A utility to handle API calls with error management
-async function safeApiCall<T>(apiCall: () => Promise<T>, errorMessage: string): Promise<T> {
+const model = "gemini-2.5-flash";
+
+const generate = async (prompt: string, isJson: boolean = false) => {
     try {
-        return await apiCall();
+        const result = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+                ...(isJson && { responseMimeType: "application/json" }),
+                temperature: 0.5,
+            },
+        });
+        return result.text;
     } catch (error) {
-        console.error(errorMessage, error);
-        // Using a generic error message for the user.
-        throw new Error('Произошла ошибка при обращении к AI. Пожалуйста, проверьте свою консоль для деталей.');
+        console.error("Error calling Gemini API:", error);
+        throw new Error("Failed to get response from AI service.");
     }
-}
-
-/**
- * Parses raw job data (potentially HTML) and enriches it with AI.
- */
-export const analyzeAndEnrichJob = async (rawJob: Partial<Job>, profile: Profile): Promise<Job> => {
-    return safeApiCall(async () => {
-        const prompt = `
-            Based on the provided job posting and my resume, please perform a detailed analysis.
-
-            MY RESUME:
-            ---
-            ${profile.resume}
-            ---
-
-            JOB POSTING:
-            ---
-            Title: ${rawJob.title}
-            Company: ${rawJob.company}
-            Location: ${rawJob.location}
-            Salary: ${rawJob.salary || 'Not specified'}
-            Description:
-            ${rawJob.description}
-            ---
-            
-            Please return a JSON object with the following structure. Do not include any text before or after the JSON object.
-            
-            SCHEMA:
-            {
-              "matchAnalysis": "A brief, 2-3 sentence analysis of how well my resume matches this job, highlighting key strengths and potential gaps.",
-              "responsibilities": ["An array of key responsibilities extracted from the description."],
-              "requirements": ["An array of key requirements extracted from the description."],
-              "companyRating": "An estimated company rating from 1 to 5 based on public perception, if possible. Default to 0 if unknown.",
-              "companyReviewSummary": "A very brief summary of public sentiment about the company (e.g., 'Good work-life balance', 'Fast-paced environment'). Default to an empty string if unknown.",
-              "contacts": {
-                "email": "The contact email address, if found in the description. Otherwise null.",
-                "phone": "The contact phone number, if found. Otherwise null.",
-                "telegram": "The contact Telegram handle (e.g., @username), if found. Otherwise null."
-              }
-            }
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-            }
-        });
-
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        const resultJson = JSON.parse(response.text);
-
-        return {
-            ...rawJob,
-            ...resultJson,
-        } as Job;
-    }, "Error in analyzeAndEnrichJob");
 };
 
-
-/**
- * Adapts a resume for a specific job.
- */
-export const adaptResumeForJob = async (job: Job, profile: Profile): Promise<string> => {
-    return safeApiCall(async () => {
-        const prompt = `
-            Please adapt my resume to better match the following job description.
-            Focus on highlighting the most relevant skills and experiences.
-            Rewrite parts of my resume to use keywords from the job description naturally.
-            Maintain a professional tone and the same overall structure of my original resume.
-            The output should be the full text of the adapted resume in Markdown format.
-
-            MY ORIGINAL RESUME:
-            ---
-            ${profile.resume}
-            ---
-
-            TARGET JOB DESCRIPTION:
-            ---
-            Title: ${job.title} at ${job.company}
-            Description: ${job.description}
-            Responsibilities: ${job.responsibilities.join(', ')}
-            Requirements: ${job.requirements.join(', ')}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
+export const analyzeJobWithResume = async (job: Omit<Job, 'id' | 'userId' | 'profileId' | 'kanbanStatus'>, resume: string): Promise<string> => {
+    const prompt = `
+        Проанализируй, насколько подходит кандидат с данным резюме для следующей вакансии.
+        Дай краткий (2-3 предложения) и честный анализ сильных и слабых сторон кандидата относительно вакансии.
         
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return response.text;
-    }, "Error in adaptResumeForJob");
-};
-
-/**
- * Generates a cover letter for a job application.
- */
-export const generateCoverLetter = async (job: Job, profile: Profile): Promise<string> => {
-    return safeApiCall(async () => {
-        const prompt = `
-            Write a professional and concise cover letter for me to apply for the position of ${job.title} at ${job.company}.
-            Use my resume to highlight my most relevant qualifications.
-            Address the requirements listed in the job description.
-            The tone should be enthusiastic but professional.
-            The output should be the full text of the cover letter in Markdown format.
-
-            MY RESUME:
-            ---
-            ${profile.resume}
-            ---
-
-            TARGET JOB DESCRIPTION:
-            ---
-            Title: ${job.title}
-            Company: ${job.company}
-            Description: ${job.description}
-            Requirements: ${job.requirements.join(', ')}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return response.text;
-    }, "Error in generateCoverLetter");
-};
-
-/**
- * Generates interview preparation questions and tips.
- */
-export const prepareForInterview = async (job: Job, profile: Profile): Promise<string> => {
-    return safeApiCall(async () => {
-        const prompt = `
-            I have an interview for the ${job.title} position at ${job.company}.
-            Based on my resume and the job description, generate a list of likely interview questions.
-            Include behavioral, technical, and situational questions.
-            For each question, provide a brief tip on how I should answer it, leveraging my experience from my resume.
-            Format the output in Markdown.
-
-            MY RESUME:
-            ---
-            ${profile.resume}
-            ---
-
-            JOB DESCRIPTION:
-            ---
-            ${job.description}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
+        Резюме кандидата:
+        ---
+        ${resume}
+        ---
         
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return response.text;
-    }, "Error in prepareForInterview");
+        Описание вакансии:
+        ---
+        Должность: ${job.title} в ${job.company}
+        Описание: ${job.description}
+        Требования: ${job.requirements.join(', ')}
+        Обязанности: ${job.responsibilities.join(', ')}
+        ---
+    `;
+    return await generate(prompt);
 };
 
 
-/**
- * Analyzes an email from an HR representative and suggests a new Kanban status.
- */
-export const analyzeHrResponse = async (emailText: string, job: Job): Promise<{ newStatus: KanbanStatus, analysis: string }> => {
-    return safeApiCall(async () => {
-        const prompt = `
-            Analyze the following email I received regarding my application for "${job.title}" at "${job.company}".
-            Determine the sentiment and the next step.
-            Based on the content, suggest a new status for my application.
-            The possible statuses are: 'interview', 'offer', 'archive' (for rejection).
-            If the email is a scheduling request, a test assignment, or a positive next step, suggest 'interview'.
-            If it's a job offer, suggest 'offer'.
-            If it's a rejection, suggest 'archive'.
-            If the status is ambiguous, keep the current status of '${job.kanbanStatus}'.
-            
-            Return a JSON object with the following structure:
-            {
-              "newStatus": "interview" | "offer" | "archive" | "${job.kanbanStatus}",
-              "analysis": "A brief summary of the email and justification for the new status."
-            }
+export const adaptResumeForJob = async (job: Job, resume: string): Promise<string> => {
+    const prompt = `
+        Адаптируй следующее резюме, чтобы оно максимально соответствовало требованиям вакансии.
+        Сделай акцент на ключевых навыках и опыте, которые релевантны для этой должности.
+        Не выдумывай опыт, которого нет в исходном резюме. Просто переформулируй и расставь акценты.
+        Ответ должен быть только текстом адаптированного резюме, без лишних вступлений и заключений.
 
-            EMAIL TEXT:
-            ---
-            ${emailText}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-            }
-        });
+        Исходное резюме:
+        ---
+        ${resume}
+        ---
 
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return JSON.parse(response.text);
-    }, "Error in analyzeHrResponse");
+        Вакансия:
+        ---
+        Должность: ${job.title} в ${job.company}
+        Описание: ${job.description}
+        Требования: ${job.requirements.join(', ')}
+        Обязанности: ${job.responsibilities.join(', ')}
+        ---
+    `;
+    return await generate(prompt);
 };
 
+export const generateCoverLetter = async (job: Job, resume: string): Promise<string> => {
+    const prompt = `
+        Напиши сопроводительное письмо для отклика на вакансию.
+        Письмо должно быть профессиональным, вежливым и кратким (3-4 абзаца).
+        Используй информацию из резюме кандидата, чтобы показать его релевантность.
+        Обращайся к HR-менеджеру компании. Если имя неизвестно, используй "Уважаемый HR-менеджер".
+        В конце вырази готовность пройти собеседование.
+        Ответ должен быть только текстом письма.
 
-/**
- * Compares up to 3 jobs and provides a summary.
- */
-export const compareJobs = async (jobs: Job[], profile: Profile): Promise<string> => {
-    return safeApiCall(async () => {
-        const jobSummaries = jobs.map((job, index) => `
-            JOB ${index + 1}: ${job.title} at ${job.company}
-            ---
-            Salary: ${job.salary || 'Not specified'}
-            Location: ${job.location}
-            Key Requirements: ${job.requirements.slice(0, 5).join(', ')}
-            My AI Match Analysis: ${job.matchAnalysis}
-            ---
-        `).join('\n\n');
+        Резюме кандидата:
+        ---
+        ${resume}
+        ---
 
-        const prompt = `
-            Please compare the following jobs based on my resume and provide a summary.
-            Highlight the pros and cons of each, considering my profile.
-            Conclude with a recommendation on which job seems like the best fit and why.
-            Format the output in Markdown.
-
-            MY RESUME SUMMARY:
-            ---
-            ${profile.resume.substring(0, 500)}... 
-            ---
-
-            JOBS TO COMPARE:
-            ---
-            ${jobSummaries}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return response.text;
-    }, "Error in compareJobs");
+        Вакансия:
+        ---
+        Должность: ${job.title}
+        Компания: ${job.company}
+        Описание: ${job.description}
+        ---
+    `;
+    return await generate(prompt);
 };
 
-/**
- * Checks if a job URL is still active by analyzing the page content.
- */
-export const checkJobIsActive = async (jobUrl: string): Promise<boolean> => {
-    // This is a placeholder. In a real app, this would require a backend function
-    // to fetch the URL and avoid CORS issues. We'll simulate a Gemini call.
-    return safeApiCall(async () => {
-        const prompt = `
-            Imagine you are a web scraper. If you visit the URL "${jobUrl}", would you expect to see a message like "vacancy has been archived", "job not found", "вакансия в архиве", or "вакансия не найдена"?
-            Answer with a single word: "active" or "inactive".
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        // Simple check on the response text.
-        // FIX: Access the generated text directly via the `.text` property on the response object.
-        return !response.text.toLowerCase().includes('inactive');
-    }, "Error in checkJobIsActive");
-};
-
-
-/**
- * Analyzes a list of emails to find replies related to tracked jobs.
- */
-export const findJobReplyInEmails = async (emails: { body: string, from: string, subject: string }[], jobs: Job[]): Promise<{ jobToUpdate: Job, analysis: string, newStatus: KanbanStatus } | null> => {
-     return safeApiCall(async () => {
-        const jobInfo = jobs.map(j => ({ id: j.id, title: j.title, company: j.company, status: j.kanbanStatus }));
-
-        const prompt = `
-            I have a list of my recent emails and a list of jobs I'm tracking.
-            Please find the FIRST email that is a clear reply to one of my job applications.
-            The reply could be a rejection, an interview invitation, or a test assignment.
-            
-            Return a JSON object with the ID of the job that the email corresponds to, and a suggested new status ('interview', 'offer', 'archive').
-            If no emails are relevant replies, return null.
-
-            The JSON schema should be:
-            {
-              "jobId": "the_id_of_the_matching_job",
-              "newStatus": "interview" | "offer" | "archive",
-              "analysis": "Brief summary of why this email matches this job and the reason for the status change."
-            }
-
-            LIST OF JOBS:
-            ---
-            ${JSON.stringify(jobInfo, null, 2)}
-            ---
-
-            LIST OF EMAILS:
-            ---
-            ${JSON.stringify(emails.map(e => ({ from: e.from, subject: e.subject, body: e.body.substring(0, 300) + '...' })), null, 2)}
-            ---
-        `;
-        // FIX: Use the 'gemini-2.5-flash' model as specified in the guidelines.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-            }
-        });
+export const prepareForInterview = async (job: Job, resume: string): Promise<string> => {
+    const prompt = `
+        Подготовь кандидата к собеседованию на вакансию.
         
-        try {
-            // FIX: Access the generated text directly via the `.text` property on the response object.
-            const result = JSON.parse(response.text);
-            if (result && result.jobId) {
-                const jobToUpdate = jobs.find(j => j.id === result.jobId);
-                if (jobToUpdate) {
-                    return {
-                        jobToUpdate,
-                        analysis: result.analysis,
-                        newStatus: result.newStatus,
-                    };
-                }
-            }
-        } catch (e) {
-            // FIX: Access the generated text directly via the `.text` property on the response object.
-            console.error("Could not parse JSON from Gemini for email analysis:", response.text);
-            return null;
+        1.  Сформулируй 5-7 наиболее вероятных технических вопросов по стеку вакансии.
+        2.  Сформулируй 3-4 поведенческих вопроса (soft-skills).
+        3.  Предложи 3-4 умных вопроса, которые кандидат может задать интервьюеру о компании, команде или проекте.
+        4.  Дай краткие советы (2-3 пункта) о том, на что обратить внимание, основываясь на резюме и вакансии.
+
+        Ответ верни в формате Markdown.
+
+        Резюме кандидата:
+        ---
+        ${resume}
+        ---
+
+        Вакансия:
+        ---
+        Должность: ${job.title} в ${job.company}
+        Описание: ${job.description}
+        Требования: ${job.requirements.join(', ')}
+        ---
+    `;
+    return await generate(prompt);
+};
+
+export const analyzeHrResponse = async (emailText: string, jobs: Job[]): Promise<{ jobId: string, newStatus: 'interview' | 'archive' }> => {
+    const jobTitles = jobs.map(j => `ID: ${j.id}, Title: ${j.title}, Company: ${j.company}`).join('\n');
+    const prompt = `
+        Проанализируй текст письма от HR. Определи, к какой из вакансий оно относится, и какой новый статус следует присвоить этой вакансии.
+        Возможные статусы: 'interview' (если приглашают на собеседование, созвон, тестовое задание) или 'archive' (если это отказ).
+        
+        Текст письма:
+        ---
+        ${emailText}
+        ---
+        
+        Список активных вакансий:
+        ---
+        ${jobTitles}
+        ---
+        
+        Ответ дай в формате JSON, где "jobId" - это ID наиболее подходящей вакансии, а "newStatus" - это новый статус ('interview' или 'archive').
+        Например: {"jobId": "some-uuid-123", "newStatus": "interview"}
+    `;
+    
+    const responseText = await generate(prompt, true);
+    try {
+        const parsed = JSON.parse(responseText.trim());
+        if (parsed.jobId && (parsed.newStatus === 'interview' || parsed.newStatus === 'archive')) {
+            return parsed;
         }
+        throw new Error("Invalid JSON structure from AI.");
+    } catch (e) {
+        console.error("Failed to parse AI response for HR email analysis:", e);
+        throw new Error("AI returned an invalid response format.");
+    }
+};
 
-        return null;
-    }, "Error in findJobReplyInEmails");
+export const compareJobs = async (jobs: Job[], resume: string): Promise<string> => {
+    const jobDescriptions = jobs.map(j => `
+        ---
+        ID: ${j.id}
+        Должность: ${j.title}
+        Компания: ${j.company}
+        Зарплата: ${j.salary}
+        Ключевые требования: ${j.requirements.slice(0, 5).join(', ')}
+        ---
+    `).join('\n');
+
+    const prompt = `
+        Сравни следующие вакансии с точки зрения кандидата с данным резюме.
+        Для каждой вакансии оцени по 10-балльной шкале, насколько она подходит кандидату.
+        Дай краткое (2-3 предложения) резюме по каждой вакансии, выделяя плюсы и минусы.
+        В конце сделай общий вывод и порекомендуй, какая из вакансий является наиболее перспективной.
+        Ответ верни в формате Markdown.
+
+        Резюме кандидата:
+        ---
+        ${resume}
+        ---
+
+        Вакансии для сравнения:
+        ${jobDescriptions}
+    `;
+
+    return await generate(prompt);
+};
+
+export const checkJobArchived = async (jobDescription: string): Promise<boolean> => {
+    const prompt = `
+        Проанализируй текст со страницы вакансии. Если в тексте есть явные указания, что вакансия "в архиве", "закрыта", "неактивна" или "больше не доступна", ответь "true". В противном случае ответь "false".
+        Текст страницы:
+        ---
+        ${jobDescription}
+        ---
+    `;
+    const response = await generate(prompt);
+    return response.toLowerCase().includes('true');
+};
+
+export const generateQuickApplyMessage = async (job: Job, resume: string, profile: Profile, type: 'email' | 'whatsapp' | 'telegram'): Promise<{ subject?: string; body: string; }> => {
+    const prompt = `
+        Сгенерируй короткое, но профессиональное сообщение для быстрого отклика на вакансию через ${type}.
+        Сообщение должно быть адаптировано под платформу (email более формальный, мессенджеры - менее).
+        Обязательно упомяни должность.
+        Используй информацию из резюме, чтобы кратко подчеркнуть релевантность кандидата.
+        Если это email, сгенерируй также тему письма.
+        Ответ дай в формате JSON. Для email: {"subject": "Тема письма", "body": "Текст письма"}. Для мессенджеров: {"body": "Текст сообщения"}.
+        
+        Резюме:
+        ---
+        ${resume}
+        ---
+
+        Вакансия:
+        ---
+        Должность: ${job.title} в ${job.company}
+        ---
+
+        Профиль кандидата:
+        ---
+        Имя: (предположим, имя есть в резюме)
+        Желаемая должность: ${profile.searchSettings.positions}
+        ---
+    `;
+    const responseText = await generate(prompt, true);
+    try {
+        return JSON.parse(responseText.trim());
+    } catch(e) {
+        console.error("Failed to parse AI response for quick apply:", e);
+        throw new Error("AI returned an invalid response format.");
+    }
+};
+
+export const executeCustomPrompt = async (template: string, job: Job, profile: Profile): Promise<string> => {
+    // Replace placeholders in the template
+    const filledPrompt = template
+        .replace(/{{job.title}}/g, job.title)
+        .replace(/{{job.company}}/g, job.company)
+        .replace(/{{job.description}}/g, job.description)
+        .replace(/{{profile.resume}}/g, profile.resume);
+    
+    return await generate(filledPrompt);
 };

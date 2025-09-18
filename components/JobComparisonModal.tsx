@@ -1,5 +1,6 @@
 import React from 'react';
 import Modal from './Modal';
+// FIX: Corrected import path for types
 import type { Job } from '../types';
 
 const JobComparisonModal: React.FC<{ jobs: Job[]; onClose: () => void }> = ({ jobs, onClose }) => {

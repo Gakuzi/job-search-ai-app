@@ -1,6 +1,6 @@
 export enum AppStatus {
-    Idle,
-    Loading,
-    Success,
-    Error,
+    Idle = 'idle',
+    Loading = 'loading',
+    Success = 'success',
+    Error = 'error',
 }

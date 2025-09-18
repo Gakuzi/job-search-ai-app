@@ -15,6 +15,7 @@ import {
     getDoc,
 } from 'firebase/firestore';
 import { app } from './firebase';
+// FIX: Corrected import path for types
 import type { Profile, Job, Interaction } from '../types';
 
 const db = getFirestore(app);

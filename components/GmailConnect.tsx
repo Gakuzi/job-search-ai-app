@@ -1,4 +1,5 @@
 import React from 'react';
+// FIX: Corrected import path for types
 import type { GoogleUser } from '../types';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';

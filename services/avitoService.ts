@@ -1,3 +1,4 @@
+// FIX: Corrected import path for types
 import type { Job, SearchSettings } from '../types';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from './firebase';
