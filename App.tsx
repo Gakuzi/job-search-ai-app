@@ -1,18 +1,10 @@
-
-// FIX: Remove reference types that cause errors when @types are not installed.
-// The global declarations below are sufficient for type checking.
-
-// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
-declare const gapi: any;
-declare const google: any;
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 
 import Header from './components/Header';
-import JobList from './components/JobList';
+import ScanResults from './components/ScanResults';
 import ApplicationTracker from './components/ApplicationTracker';
 import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
@@ -28,7 +20,6 @@ import { SparklesIcon } from './components/icons/SparklesIcon';
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
-// FIX: Import kanbanStatusMap to resolve reference error.
 import { kanbanStatusMap } from './types';
 import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email, Interaction } from './types';
 
@@ -40,6 +31,7 @@ import {
     analyzeHrResponse,
     generateShortMessage,
     matchEmailToJob,
+    suggestPlatforms
 } from './services/geminiService';
 import { auth, firebaseConfig } from './services/firebase';
 import {
@@ -55,8 +47,11 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
 import { sendEmail, listMessages } from './services/gmailService';
 
+// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
+declare const gapi: any;
+declare const google: any;
 
-type View = 'search' | 'applications';
+type View = 'scanResults' | 'applications';
 type ModalState =
     | { type: 'none' }
     | { type: 'jobDetail'; job: Job }
@@ -69,7 +64,7 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function App() {
     const [theme, setTheme] = useTheme();
-    const [view, setView] = useLocalStorage<View>('view', 'search');
+    const [view, setView] = useLocalStorage<View>('view', 'applications');
     const [user, setUser] = useState<User | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
 
@@ -154,11 +149,9 @@ function App() {
             if (window.gapi && window.google) {
                 clearInterval(scriptLoadCheckInterval);
                 try {
-                    // Initialize GSI first for a responsive UI. It's fast and local.
                     const client = initTokenClient(handleGoogleAuthResponse);
                     setTokenClient(client);
                     
-                    // Initialize GAPI in the background. This involves network requests.
                     gapiLoad('client').then(() => {
                         initGapiClient().then(() => {
                            setIsGapiReady(true);
@@ -196,8 +189,6 @@ function App() {
         };
     }, [isGoogleConfigured, handleGoogleAuthResponse]);
 
-    // This effect re-applies the stored token to the GAPI client when the app loads
-    // or when the GAPI client becomes ready.
     useEffect(() => {
         if (isGapiReady && googleToken) {
             gapi.client.setToken({ access_token: googleToken.access_token });
@@ -216,21 +207,16 @@ function App() {
             setProfiles(loadedProfiles);
 
             if (loadedProfiles.length === 0) {
-                // Case 1: No profiles exist. Launch wizard.
                 setActiveProfileId(null);
                 setModal({ type: 'setupWizard' });
             } else {
-                // Case 2: Profiles exist.
                 let currentActiveProfile = loadedProfiles.find(p => p.id === activeProfileId);
 
                 if (!currentActiveProfile) {
-                    // Active profile ID from storage is invalid or null, so pick the first one.
                     currentActiveProfile = loadedProfiles[0];
                     setActiveProfileId(currentActiveProfile.id);
                 }
-
-                // Now, check if the determined active profile is a default/placeholder one.
-                // A good heuristic for this is checking if the resume is the default template.
+                
                 if (currentActiveProfile && currentActiveProfile.resume.trim() === DEFAULT_RESUME.trim()) {
                     setModal({ type: 'setupWizard' });
                 }
@@ -263,7 +249,6 @@ function App() {
     
     const handleGoogleSignOut = () => {
         if (googleToken) {
-            // FIX: The revokeToken function expects 0 arguments and gets the token from the gapi client.
             revokeToken();
             setGoogleUser(null);
             setGoogleToken(null);
@@ -283,8 +268,6 @@ function App() {
         updater(updatedProfile);
         updateProfile(updatedProfile).catch(console.error);
         
-        // This is a simplified update for the UI to avoid waiting for Firestore.
-        // For a more robust solution, you'd re-fetch or use the Firestore subscription.
         setProfiles(draft => {
             const index = draft.findIndex(p => p.id === activeProfile.id);
             if (index !== -1) {
@@ -331,7 +314,7 @@ function App() {
         setMessage('Анализирую ваш профиль и резюме...');
         
         setFoundJobs([]);
-        setView('search');
+        setView('scanResults');
 
         try {
             const enabledPlatforms = activeProfile.settings.platforms.filter(p => p.enabled);
@@ -344,11 +327,13 @@ function App() {
             const existingJobUrls = new Set(jobs.filter(j => j.profileId === activeProfile.id).map(j => j.url));
             let allResults: Job[] = [];
             
-            for (const platform of enabledPlatforms) {
-                setMessage(`ИИ сканирует ${platform.name}...`);
+            for (let i = 0; i < enabledPlatforms.length; i++) {
+                const platform = enabledPlatforms[i];
+                setMessage(`Этап ${i + 1}/${enabledPlatforms.length}: ИИ сканирует ${platform.name}...`);
                 const platformResults = await findJobsOnRealWebsite(activeProfile.prompts.jobSearch, activeProfile.resume, activeProfile.settings, platform);
+                
                 const newJobsFromPlatform = platformResults
-                    .filter(job => !existingJobUrls.has(job.url))
+                    .filter(job => !existingJobUrls.has(job.url) && !allResults.some(r => r.url === job.url))
                     .map(job => ({
                         ...job,
                         id: uuidv4(),
@@ -357,28 +342,30 @@ function App() {
                         userId: user!.uid,
                         history: [],
                     }));
+                
                 allResults = [...allResults, ...newJobsFromPlatform];
+                setFoundJobs([...allResults]); // Update UI incrementally
             }
 
-            setMessage('ИИ завершает анализ и сопоставление с вашим профилем...');
-
-            setFoundJobs(allResults);
+            setMessage(`Сканирование завершено. Найдено ${allResults.length} новых вакансий. ИИ проводит финальный анализ...`);
             setStatus(AppStatus.Success);
-             if (allResults.length > 0) {
-                setMessage(`Найдено ${allResults.length} новых релевантных вакансий с ${enabledPlatforms.map(p => p.name).join(', ')}.`);
-            } else {
-                setMessage('Новых вакансий не найдено. Все найденные уже есть в ваших откликах.');
+            
+            if (allResults.length === 0) {
+                setMessage('Новых вакансий не найдено. Попробуйте изменить параметры поиска или добавить больше площадок в настройках.');
             }
+
         } catch (error) {
             setStatus(AppStatus.Error);
             setMessage(error instanceof Error ? error.message : 'Произошла неизвестная ошибка.');
         }
     };
 
-    const handleSaveJobs = async (jobsToSave: Job[]) => {
+    const handleSaveScannedJobs = async (jobsToSave: Job[]) => {
         await addJobsBatch(jobsToSave);
         setFoundJobs(prev => prev.filter(job => !jobsToSave.find(saved => saved.id === job.id)));
         setView('applications');
+        setStatus(AppStatus.Success);
+        setMessage(`${jobsToSave.length} вакансий добавлено на доску откликов.`);
     };
     
     const handleAddInteraction = (jobId: string, type: Interaction['type'], content: string) => {
@@ -698,8 +685,8 @@ function App() {
                             </p>
                         </div>
                          <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                            <button onClick={() => setView('search')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'search' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
-                                Поиск
+                            <button onClick={() => setView('scanResults')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'scanResults' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                Результаты сканирования
                             </button>
                             <button onClick={() => setView('applications')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${view === 'applications' ? 'bg-primary-500 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
                                 Отклики
@@ -727,19 +714,16 @@ function App() {
                     {status !== AppStatus.Idle && <StatusBar status={status} message={message} />}
 
                     {activeProfile ? (
-                        view === 'search' ? (
-                            <JobList
+                        view === 'scanResults' ? (
+                            <ScanResults
                                 jobs={foundJobs}
-                                onSaveJobs={handleSaveJobs}
+                                onSaveJobs={handleSaveScannedJobs}
                                 onDismissJob={(jobId) => setFoundJobs(prev => prev.filter(j => j.id !== jobId))}
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}
-                                onAdaptResume={handleAdaptResume}
-                                onGenerateEmail={handleGenerateEmail}
                             />
                         ) : (
                             <ApplicationTracker
                                 jobs={jobs.filter(j => j.profileId === activeProfile.id)}
-                                // FIX: Pass the 'profiles' prop to satisfy the ApplicationTrackerProps interface.
                                 profiles={profiles}
                                 onUpdateJobStatus={handleUpdateJobStatus}
                                 onViewDetails={(job) => setModal({ type: 'jobDetail', job })}

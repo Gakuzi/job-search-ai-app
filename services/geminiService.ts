@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Job, SearchSettings, KanbanStatus, Platform } from '../types';
 import { getActiveApiKey, rotateApiKey } from './apiKeyService';
@@ -153,8 +151,6 @@ export async function* adaptResume(promptTemplate: string, resume: string, job: 
     
     const fullPrompt = `${prompt}\n\n## Базовое резюме:\n${resume}\n\n## Описание вакансии:\n${job.description}\n\nОбязанности:\n${job.responsibilities.join('\n- ')}`;
     
-    // FIX: The function passed to runStreamingAiOperation must be an async function that returns a promise resolving to an async generator.
-    // The original `async function*` was incorrect as it directly returned an async generator.
     yield* runStreamingAiOperation(async (ai) => {
         const response = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
@@ -215,8 +211,6 @@ ${resume}
 **Описание:** ${job.description}
 **Обязанности:** ${job.responsibilities.join(', ')}
     `;
-    // FIX: The function passed to runStreamingAiOperation must be an async function that returns a promise resolving to an async generator.
-    // The original `async function*` was incorrect as it directly returned an async generator.
     yield* runStreamingAiOperation(async (ai) => {
         const response = await ai.models.generateContentStream({
             model: "gemini-2.5-flash",
@@ -325,6 +319,50 @@ ${JSON.stringify(simplifiedJobs, null, 2)}
 
     console.warn(`AI returned an unknown job ID: '${result}'.`);
     return "UNKNOWN";
+};
+
+export const suggestPlatforms = async (role: string, region: string): Promise<Omit<Platform, 'id' | 'enabled'>[]> => {
+    const resultText = await runAiOperation(async (ai) => {
+        const prompt = `
+# ЗАДАЧА: ПОДБОР ПЛОЩАДОК ДЛЯ ПОИСКА ВАКАНСИЙ
+Проанализируй должность и регион, и предложи 3-4 наиболее подходящих сайта (job boards) для поиска вакансий.
+Для России в приоритете должны быть hh.ru, habr.com/ru/career, и возможно, linkedin.com.
+
+Должность: ${role}
+Регион: ${region}
+
+Верни результат СТРОГО в формате JSON-массива объектов. Каждый объект должен содержать два ключа:
+- \`name\`: Название площадки (например, "HeadHunter").
+- \`url\`: ПРЯМАЯ ссылка на страницу поиска вакансий на этом сайте (например, "https://hh.ru/search/vacancy").
+
+Пример вывода:
+[
+  { "name": "HeadHunter", "url": "https://hh.ru/search/vacancy" },
+  { "name": "Habr Career", "url": "https://career.habr.com/vacancies" }
+]
+`;
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            url: { type: Type.STRING }
+                        },
+                        required: ["name", "url"]
+                    }
+                }
+            }
+        });
+        return response.text;
+    });
+
+    return parseJsonResponse<Omit<Platform, 'id' | 'enabled'>[]>(resultText, 'подбора платформ');
 };
 
 

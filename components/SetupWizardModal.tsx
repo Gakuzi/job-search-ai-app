@@ -1,12 +1,10 @@
-
-
 import React, { useState, useRef } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
 
 import type { SearchSettings, Platform } from '../types';
 import { DEFAULT_SEARCH_SETTINGS } from '../constants';
-import { extractProfileDataFromResume } from '../services/geminiService';
+import { extractProfileDataFromResume, suggestPlatforms } from '../services/geminiService';
 
 import { XCircleIcon } from './icons/XCircleIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
@@ -66,6 +64,33 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
             setIsLoading(false);
         }
     };
+
+    const handleSuggestPlatforms = async () => {
+        setError('');
+        setIsLoading(true);
+        try {
+            const suggested = await suggestPlatforms(settings.positions, settings.location);
+            const newPlatforms = suggested.map(p => ({
+                id: uuidv4(),
+                name: p.name,
+                url: p.url,
+                enabled: true, // Enable by default
+            }));
+            updateSettings(draft => {
+                draft.platforms = newPlatforms;
+            });
+            setStep(3);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Не удалось подобрать платформы.');
+             // Fallback to default if AI fails
+            updateSettings(draft => {
+                draft.platforms = DEFAULT_SEARCH_SETTINGS.platforms;
+            });
+            setStep(3);
+        } finally {
+            setIsLoading(false);
+        }
+    };
     
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -105,6 +130,7 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
     const handleFinish = () => {
         if (!profileName.trim()) {
             setError('Пожалуйста, укажите имя профиля.');
+            setStep(4); // Go back to the final step to fix it
             return;
         }
         onFinish({ resume, settings, profileName });
@@ -194,29 +220,38 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
                     {step === 3 && (
                         <div className="space-y-4">
                             <h3 className="text-xl font-bold">Шаг 3: Платформы для поиска</h3>
-                            <p className="text-slate-600 dark:text-slate-400">Выберите сайты, на которых наш ИИ-ассистент будет искать для вас вакансии.</p>
-                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 rounded-lg text-sm flex items-start gap-2">
-                                <QuestionMarkCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5"/>
-                                <div>
-                                    <span className="font-semibold">Как это работает?</span> ИИ использует продвинутые методы публичного поиска на выбранных сайтах. Это безопасно и не требует ввода ваших логинов и паролей.
+                             {isLoading ? (
+                                <div className="text-center p-8">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto"></div>
+                                    <p className="mt-4 text-slate-600 dark:text-slate-400">ИИ подбирает лучшие площадки для вас...</p>
                                 </div>
-                            </div>
-                            <div className="space-y-3">
-                                {settings.platforms.map(platform => (
-                                    <div key={platform.id} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-between">
+                            ) : (
+                                <>
+                                    <p className="text-slate-600 dark:text-slate-400">На основе ваших данных, ИИ рекомендует искать вакансии на этих сайтах. Выберите те, что вам подходят.</p>
+                                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 rounded-lg text-sm flex items-start gap-2">
+                                        <QuestionMarkCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5"/>
                                         <div>
-                                            <h4 className="font-semibold">{platform.name}</h4>
-                                            <p className="text-xs text-slate-500">{platform.url}</p>
+                                            <span className="font-semibold">Как это работает?</span> ИИ использует продвинутые методы публичного поиска на выбранных сайтах. Это безопасно и не требует ввода ваших логинов и паролей.
                                         </div>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={platform.enabled} 
-                                            onChange={(e) => handlePlatformChange(platform.id, 'enabled', e.target.checked)} 
-                                            className="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
-                                        />
                                     </div>
-                                ))}
-                            </div>
+                                    <div className="space-y-3">
+                                        {settings.platforms.map(platform => (
+                                            <div key={platform.id} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="font-semibold">{platform.name}</h4>
+                                                    <p className="text-xs text-slate-500">{platform.url}</p>
+                                                </div>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={platform.enabled} 
+                                                    onChange={(e) => handlePlatformChange(platform.id, 'enabled', e.target.checked)} 
+                                                    className="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
                      {step === 4 && (
@@ -227,7 +262,7 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
                             <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg text-left space-y-2">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Имя профиля</label>
-                                    <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} className="w-full input-style font-semibold" />
+                                    <input type="text" value={profileName} onChange={(e) => { setProfileName(e.target.value); setError(''); }} className="w-full input-style font-semibold" />
                                 </div>
                                 <p className="text-sm"><strong className="text-slate-600 dark:text-slate-400">Должности:</strong> {settings.positions}</p>
                                 <p className="text-sm"><strong className="text-slate-600 dark:text-slate-400">Локация:</strong> {settings.location} {settings.remote && "(удаленно)"}</p>
@@ -249,8 +284,8 @@ const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, onClose }
                         </button>
                     )}
                      {step === 2 && (
-                        <button onClick={() => setStep(3)} className="btn-primary">
-                            Далее
+                        <button onClick={handleSuggestPlatforms} disabled={isLoading} className="btn-primary disabled:opacity-50">
+                            {isLoading ? 'Подбор...' : 'Подобрать платформы'}
                         </button>
                     )}
                      {step === 3 && (
