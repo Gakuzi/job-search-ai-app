@@ -99,26 +99,10 @@ export interface GoogleUser {
     picture: string;
 }
 
-export interface GmailMessagePartHeader {
-    name: string;
-    value: string;
-}
-
-export interface GmailMessage {
+export interface Email {
     id: string;
-    threadId: string;
-    payload: {
-        headers: GmailMessagePartHeader[];
-        parts: {
-            body: {
-                data: string; // base64 encoded
-            }
-        }[];
-    }
-}
-
-export interface GmailThread {
-    id: string;
+    from: string;
+    subject: string;
     snippet: string;
-    messages: GmailMessage[];
+    body: string;
 }

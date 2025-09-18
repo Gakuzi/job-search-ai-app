@@ -2,6 +2,10 @@
 /// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
 
+// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
+declare const gapi: any;
+declare const google: any;
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useImmer } from 'use-immer';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,14 +20,14 @@ import Modal from './components/Modal';
 import OnboardingModal from './components/OnboardingModal';
 import JobDetailModal from './components/JobDetailModal';
 import HrAnalysisModal from './components/HrAnalysisModal';
-import ReplyScannerModal from './components/ReplyScannerModal';
+import GmailScannerModal from './components/GmailScannerModal';
 import AuthGuard from './components/AuthGuard';
 import ConfigurationError from './components/ConfigurationError';
 
 
 import { useTheme } from './hooks/useTheme';
 import { AppStatus, DEFAULT_PROMPTS, DEFAULT_RESUME, DEFAULT_SEARCH_SETTINGS } from './constants';
-import type { Job, Profile, KanbanStatus, SearchSettings, GmailThread, GoogleUser } from './types';
+import type { Job, Profile, KanbanStatus, SearchSettings, GoogleUser, Email } from './types';
 
 import {
     findJobsOnRealWebsite,
@@ -46,7 +50,7 @@ import {
 } from './services/firestoreService';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { initTokenClient, initGapiClient, gapiLoad, revokeToken } from './services/googleAuthService';
-import { sendEmail, listThreads, getThread } from './services/gmailService';
+import { sendEmail, listMessages } from './services/gmailService';
 
 
 type View = 'search' | 'applications';
@@ -56,7 +60,7 @@ type ModalState =
     | { type: 'onboarding' }
     | { type: 'aiContent'; title: string; content: string; isLoading: boolean; }
     | { type: 'hrAnalysis'; job: Job }
-    | { type: 'replyScanner'; replies: GmailThread[], analysisJobId: string | null };
+    | { type: 'gmailScanner'; emails: Email[], analysisJobId: string | null, isLoading: boolean };
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -79,8 +83,8 @@ function App() {
 
     // Google Auth State
     const [googleUser, setGoogleUser] = useLocalStorage<GoogleUser | null>('google-user', null);
-    const [googleToken, setGoogleToken] = useLocalStorage<google.accounts.oauth2.TokenResponse | null>('google-token', null);
-    const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null);
+    const [googleToken, setGoogleToken] = useLocalStorage<any | null>('google-token', null);
+    const [tokenClient, setTokenClient] = useState<any | null>(null);
     const [isGapiReady, setIsGapiReady] = useState(false);
     
     const isGoogleConnected = !!googleToken;
@@ -98,7 +102,7 @@ function App() {
         return () => unsubscribe();
     }, []);
 
-    const handleGoogleAuthResponse = useCallback(async (tokenResponse: google.accounts.oauth2.TokenResponse) => {
+    const handleGoogleAuthResponse = useCallback(async (tokenResponse: any) => {
         if (tokenResponse.error) {
             console.error('Google Auth Error:', tokenResponse);
             setMessage(`Ошибка аутентификации Google: ${tokenResponse.error_description || tokenResponse.error}`);
@@ -236,7 +240,8 @@ function App() {
     
     const handleGoogleSignOut = () => {
         if (googleToken) {
-            revokeToken(googleToken.access_token);
+            // FIX: The revokeToken function expects 0 arguments and gets the token from the gapi client.
+            revokeToken();
             setGoogleUser(null);
             setGoogleToken(null);
         }
@@ -451,33 +456,24 @@ function App() {
     };
     
     // --- Gmail Scanner ---
-    const handleScanReplies = async () => {
+    const handleOpenGmailScanner = async () => {
         if (!activeProfile || !isGoogleConnected) return;
         
         setStatus(AppStatus.Loading);
         setMessage("Сканирую Gmail на наличие ответов от HR...");
-        setModal({ type: 'replyScanner', replies: [], analysisJobId: null });
+        setModal({ type: 'gmailScanner', emails: [], analysisJobId: null, isLoading: true });
 
         try {
-            const companies = [...new Set(jobs.map(j => j.company))];
-            const searchQueries = companies.map(c => `from:(${c.toLowerCase().replace(/\s/g, ' OR ')})`);
-            const query = searchQueries.join(' OR ');
-
-            // In a real app, you would use listThreads and getThread
-            // For this example, we use mock data to demonstrate the flow
-            const mockReplies: GmailThread[] = [
-                { id: 'thread1', snippet: 'Re: Вакансия Project Manager - Приглашение на собеседование', messages: [{ id: 'msg1', threadId: 'thread1', payload: { headers: [{name: 'Subject', value: 'Re: Вакансия Project Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Здравствуйте! Спасибо за отклик. Хотим пригласить вас на онлайн-собеседование 15 мая в 12:00. Подходит ли вам это время? С уважением, HR-отдел Tech Solutions.'))) } }] } }] },
-                { id: 'thread2', snippet: 'Отклик на вакансию Product Manager', messages: [{ id: 'msg2', threadId: 'thread2', payload: { headers: [{name: 'Subject', value: 'Re: Отклик на вакансию Product Manager'}], parts: [{ body: { data: btoa(unescape(encodeURIComponent('Добрый день! К сожалению, на данный момент мы не готовы продолжить общение по вашей кандидатуре. Спасибо за уделенное время. FinTech Innovations.'))) } }] } }] }
-            ];
-            
-            setModal({ type: 'replyScanner', replies: mockReplies, analysisJobId: null });
+            const emails = await listMessages();
+            setModal({ type: 'gmailScanner', emails, analysisJobId: null, isLoading: false });
             
             setStatus(AppStatus.Success);
-            setMessage(`Найдено ${mockReplies.length} потенциальных ответа.`);
+            setMessage(`Найдено ${emails.length} последних писем.`);
 
         } catch (error) {
             setStatus(AppStatus.Error);
-            setMessage(error instanceof Error ? error.message : 'Ошибка при сканировании почты.');
+            const errorMessage = error instanceof Error ? error.message : 'Ошибка при сканировании почты.';
+            setMessage(errorMessage);
             setModal({type: 'none'});
         }
     };
@@ -487,7 +483,7 @@ function App() {
         
         try {
             setModal(prevModal => {
-                if (prevModal.type === 'replyScanner') {
+                if (prevModal.type === 'gmailScanner') {
                     return { ...prevModal, analysisJobId: 'loading' };
                 }
                 return prevModal;
@@ -501,7 +497,7 @@ function App() {
             }
 
             setModal(prevModal => {
-                if (prevModal.type === 'replyScanner') {
+                if (prevModal.type === 'gmailScanner') {
                     return { ...prevModal, analysisJobId: matchedJob.id };
                 }
                 return prevModal;
@@ -514,7 +510,7 @@ function App() {
             setMessage(error instanceof Error ? error.message : 'Ошибка при анализе ответа.');
         } finally {
              setTimeout(() => {
-                setModal({ type: 'none' });
+                setModal(prev => prev.type === 'gmailScanner' ? { ...prev, analysisJobId: null } : prev);
             }, 3000); 
         }
     };
@@ -562,11 +558,12 @@ function App() {
                     onClose={() => setModal({ type: 'none' })}
                     onAnalyze={(emailText) => handleAnalyzeHrResponse(modal.job, emailText)}
                 />;
-            case 'replyScanner':
-                return <ReplyScannerModal
-                    replies={modal.replies}
+            case 'gmailScanner':
+                return <GmailScannerModal
+                    emails={modal.emails}
                     jobs={jobs}
                     analysisJobId={modal.analysisJobId}
+                    isLoading={modal.isLoading}
                     onClose={() => setModal({ type: 'none' })}
                     onAnalyzeReply={handleAnalyzeScannedReply}
                 />;
@@ -622,7 +619,7 @@ function App() {
                                 onAdaptResume={handleAdaptResume}
                                 onGenerateEmail={handleGenerateEmail}
                                 isGoogleConnected={isGoogleConnected}
-                                onScanReplies={handleScanReplies}
+                                onScanReplies={handleOpenGmailScanner}
                             />
                         )
                     ) : (

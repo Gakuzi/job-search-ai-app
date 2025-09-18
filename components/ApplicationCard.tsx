@@ -1,17 +1,16 @@
 import React from 'react';
-import type { Job, Profile } from '../types';
+import type { Job } from '../types';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { MailIcon } from './icons/MailIcon';
 
 interface ApplicationCardProps {
     job: Job;
-    profiles: Profile[];
     onViewDetails: (job: Job) => void;
     onAdaptResume: (job: Job) => void;
     onGenerateEmail: (job: Job) => void;
 }
 
-const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, profiles, onViewDetails, onAdaptResume, onGenerateEmail }) => {
+const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, onViewDetails, onAdaptResume, onGenerateEmail }) => {
     
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
         e.dataTransfer.setData('jobId', job.id);
@@ -21,8 +20,6 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, profiles, onView
         e.stopPropagation();
         action();
     };
-    
-    const profileName = profiles.find(p => p.id === job.profileId)?.name;
 
     return (
         <div
@@ -52,11 +49,6 @@ const ApplicationCard: React.FC<ApplicationCardProps> = ({ job, profiles, onView
             <p className="text-xs text-slate-600 dark:text-slate-400">{job.company}</p>
             <div className="flex justify-between items-center mt-2">
                 <p className="text-xs text-slate-500 dark:text-slate-400">{job.salary || 'З/П не указана'}</p>
-                {profileName && (
-                     <span className="px-1.5 py-0.5 text-xs font-medium text-primary-800 bg-primary-100 dark:text-primary-200 dark:bg-primary-500/20 rounded-full">
-                        {profileName}
-                    </span>
-                )}
             </div>
         </div>
     );

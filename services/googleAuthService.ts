@@ -3,8 +3,9 @@
 /// <reference types="gapi.client" />
 /// <reference types="google.accounts" />
 
-// FIX: Add references for GAPI and Google Accounts to resolve type errors.
-// FIX: Add gapi.client types reference to resolve issues with gapi.client
+// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
+declare const gapi: any;
+declare const google: any;
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -20,8 +21,8 @@ export const gapiLoad = (libs: string): Promise<void> => {
     return new Promise((resolve, reject) => {
         try {
             // FIX: The type definition for gapi.load is overly restrictive in some environments.
-            // Casting to 'any' bypasses the incorrect type check while preserving functionality.
-            gapi.load(libs as any, resolve);
+            // With `gapi` declared as `any`, the cast is no longer needed.
+            gapi.load(libs, resolve);
         } catch (err) {
             reject(err);
         }
@@ -36,8 +37,8 @@ export const initGapiClient = (): Promise<void> => {
 };
 
 export const initTokenClient = (
-    callback: (resp: google.accounts.oauth2.TokenResponse) => void
-): google.accounts.oauth2.TokenClient => {
+    callback: (resp: any) => void
+): any => {
     return google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: GMAIL_SCOPES,
@@ -46,7 +47,7 @@ export const initTokenClient = (
 };
 
 
-export const getToken = (tokenClient: google.accounts.oauth2.TokenClient) => {
+export const getToken = (tokenClient: any) => {
     tokenClient.requestAccessToken({ prompt: 'consent' });
 };
 
