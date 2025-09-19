@@ -4,10 +4,7 @@ import type { Profile, PromptTemplate, GoogleUser, SearchSettings } from '../typ
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { PlusCircleIcon } from './icons/PlusCircleIcon';
-import { TrashIcon } from './icons/TrashIcon';
-import { SparklesIcon } from './icons/SparklesIcon'; // Using a nice icon for the wizard
+import { PencilSquareIcon, PlusCircleIcon, TrashIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 interface SettingsModalProps {
     profile: Profile;

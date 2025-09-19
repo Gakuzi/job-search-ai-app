@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 // FIX: Corrected import path for types
 import type { Job, KanbanStatus, Profile } from '../types';
 import KanbanBoard from './KanbanBoard';
-import { GoogleIcon } from './icons/GoogleIcon';
-import { ArrowPathIcon } from './icons/ArrowPathIcon';
+// import { Google } from 'devicons-react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 
 interface ApplicationTrackerProps {
     jobs: Job[];
@@ -76,7 +76,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
                     className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     title={!isGoogleConnected ? "Подключите Gmail в Настройках -> Интеграции" : !isGapiReady ? "API Google еще инициализируется..." : "Проверить почту на наличие ответов"}
                 >
-                    <GoogleIcon className="w-5 h-5"/>
+                    {/* <Google className="w-5 h-5"/> */}
                     Сканировать Gmail
                 </button>
             </div>

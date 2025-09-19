@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
-// FIX: Corrected import path for types
 import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
-import { XCircleIcon } from './icons/XCircleIcon';
-import { ClipboardIcon } from './icons/ClipboardIcon';
-import { SendIcon } from './icons/SendIcon';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
-import { MailIcon } from './icons/MailIcon';
-import { WhatsappIcon } from './icons/WhatsappIcon';
-import { TelegramIcon } from './icons/TelegramIcon';
-import { PlusCircleIcon } from './icons/PlusCircleIcon';
-
+import {
+    XCircleIcon,
+    ClipboardDocumentListIcon,
+    EnvelopeOpenIcon,
+    PencilSquareIcon,
+    ChatBubbleLeftRightIcon,
+    EnvelopeIcon,
+    ChatBubbleOvalLeftEllipsisIcon,
+    PaperAirplaneIcon,
+    PlusCircleIcon,
+    ArrowPathIcon,
+    PencilIcon,
+    PhoneIcon,
+    EllipsisHorizontalCircleIcon
+} from '@heroicons/react/24/outline';
 
 interface JobDetailModalProps {
     job: Job;
@@ -81,11 +85,11 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
 
     const getInteractionIcon = (type: Interaction['type']) => {
         switch (type) {
-            case 'email_sent': return '✉️';
-            case 'status_change': return '🔄';
-            case 'note': return '📝';
-            case 'call': return '📞';
-            default: return '🔹';
+            case 'email_sent': return <EnvelopeIcon className="w-4 h-4 inline mr-1" />;
+            case 'status_change': return <ArrowPathIcon className="w-4 h-4 inline mr-1" />;
+            case 'note': return <PencilIcon className="w-4 h-4 inline mr-1" />;
+            case 'call': return <PhoneIcon className="w-4 h-4 inline mr-1" />;
+            default: return <EllipsisHorizontalCircleIcon className="w-4 h-4 inline mr-1" />;
         }
     };
     
@@ -139,16 +143,16 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                             <h3 className="text-lg font-semibold mb-2">Инструменты ИИ</h3>
                             <div className="space-y-2">
                                 <button onClick={() => onAdaptResume(job)} className="w-full btn-tool">
-                                    <ClipboardIcon className="w-4 h-4" /> Адаптировать резюме
+                                    <ClipboardDocumentListIcon className="w-4 h-4" /> Адаптировать резюме
                                 </button>
                                 <button onClick={() => onGenerateEmail(job)} className="w-full btn-tool">
-                                    <SendIcon className="w-4 h-4" /> Сопроводительное
+                                    <EnvelopeOpenIcon className="w-4 h-4" /> Сопроводительное
                                 </button>
                                 <button onClick={() => onPrepareForInterview(job)} className="w-full btn-tool">
                                     <PencilSquareIcon className="w-4 h-4" /> К интервью
                                 </button>
                                  <button onClick={() => onAnalyzeResponse(job)} className="w-full btn-tool border-t border-slate-200 dark:border-slate-700 pt-3 mt-2">
-                                    <ChatBubbleIcon className="w-4 h-4" /> Анализировать ответ HR
+                                    <ChatBubbleLeftRightIcon className="w-4 h-4" /> Анализировать ответ HR
                                 </button>
                             </div>
                         </div>
@@ -162,13 +166,13 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({
                                     className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed"
                                     title={!isGoogleConnected ? "Подключите Gmail в настройках" : !isGapiReady ? "API Google еще инициализируется..." : !job.contacts?.email ? "Email не указан в вакансии" : "Отправить через Gmail"}
                                 >
-                                    {quickApplyLoading === 'email' ? 'Генерация...' : <><MailIcon className="w-5 h-5" /> Email</>}
+                                    {quickApplyLoading === 'email' ? 'Генерация...' : <><EnvelopeIcon className="w-5 h-5" /> Email</>}
                                 </button>
                                 <button onClick={() => handleQuickApply('whatsapp')} disabled={!job.contacts?.phone || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {quickApplyLoading === 'whatsapp' ? 'Генерация...' : <><WhatsappIcon className="w-5 h-5" /> WhatsApp</>}
+                                    {quickApplyLoading === 'whatsapp' ? 'Генерация...' : <><ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" /> WhatsApp</>}
                                 </button>
                                 <button onClick={() => handleQuickApply('telegram')} disabled={!job.contacts?.telegram || !!quickApplyLoading} className="w-full btn-tool-contact disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {quickApplyLoading === 'telegram' ? 'Генерация...' : <><TelegramIcon className="w-5 h-5" /> Telegram</>}
+                                    {quickApplyLoading === 'telegram' ? 'Генерация...' : <><PaperAirplaneIcon className="w-5 h-5" /> Telegram</>}
                                 </button>
                             </div>
                         </div>

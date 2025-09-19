@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 import { auth } from '../services/firebase';
 import { 
     createUserWithEmailAndPassword, 

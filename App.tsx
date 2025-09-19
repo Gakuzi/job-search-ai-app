@@ -27,7 +27,6 @@ import * as firestore from './services/firestoreService';
 import * as gemini from './services/geminiService';
 // hhService is not provided, so we're using a mock for now.
 // import { findJobsOnHH } from './services/hhService';
-import { findJobsOnAvitoAPI } from './services/avitoService';
 import * as gAuth from './services/googleAuthService';
 import * as gMail from './services/gmailService';
 import { getApiKey } from './services/apiKeyService';
@@ -164,16 +163,6 @@ const MainApplication: React.FC = () => {
                 const hhJobs = await findJobsOnHH(settings);
                 foundJobs = [...foundJobs, ...hhJobs];
             }
-            if (settings.platforms.avito) {
-                const clientId = await getApiKey('avito_client_id');
-                const clientSecret = await getApiKey('avito_client_secret');
-                if (clientId && clientSecret) {
-                    const avitoJobs = await findJobsOnAvitoAPI(settings, clientId, clientSecret);
-                    foundJobs = [...foundJobs, ...avitoJobs];
-                } else {
-                     setStatusMessage('Ключи API для Avito не настроены. Пропускаем...');
-                }
-            }
 
             setStatusMessage(`Найдено ${foundJobs.length} вакансий. Анализируем с помощью ИИ...`);
             const analyzedJobs = await Promise.all(foundJobs.map(async job => {
@@ -297,7 +286,7 @@ const MainApplication: React.FC = () => {
     // LOGIC RESTORE: Adds a new, empty profile from the settings.
     const handleAddProfile = async (name: string) => {
         if (user) {
-            const newProfileData = { name, resume: '', searchSettings: { positions: '', location: '', salary: 0, limit: 20, platforms: { hh: true, avito: true, habr: false } } };
+            const newProfileData = { name, resume: '', searchSettings: { positions: '', location: '', salary: 0, limit: 20, platforms: { hh: true, avito: false, habr: false } } };
             const newProfileId = await firestore.addProfile(user.uid, newProfileData);
             setActiveProfileId(newProfileId);
             setActiveModal(null); // Close settings modal

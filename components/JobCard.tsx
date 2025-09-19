@@ -1,23 +1,12 @@
 import React from 'react';
-// FIX: Corrected import path for types
 import type { Job } from '../types';
-import { SparklesIcon } from './icons/SparklesIcon';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { MailIcon } from './icons/MailIcon';
-
-const LocationMarkerIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-    </svg>
-);
-
-const CurrencyDollarIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182.553-.44 1.282-.659 2.003-.659c.725 0 1.45.22 2.003.659.879.659 2.298.659 3.182 0l.879-.659m-9.456 12.456-1.09-1.09a2.25 2.25 0 0 1 0-3.182l.995-.995a2.25 2.25 0 0 1 3.182 0l.995.995a2.25 2.25 0 0 1 0 3.182l-1.09 1.09a2.25 2.25 0 0 1-3.182 0Z" />
-    </svg>
-);
-
+import {
+    SparklesIcon,
+    PencilSquareIcon,
+    EnvelopeIcon,
+    MapPinIcon,
+    CurrencyDollarIcon
+} from '@heroicons/react/24/outline';
 
 interface JobCardProps {
     job: Job;
@@ -52,7 +41,7 @@ const JobCard: React.FC<JobCardProps> = ({ job, onSave, onDismiss, onViewDetails
                     className="p-1.5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-full text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-900 hover:text-primary-500"
                     title="Создать сопроводительное письмо"
                 >
-                    <MailIcon className="w-5 h-5" />
+                    <EnvelopeIcon className="w-5 h-5" />
                 </button>
             </div>
             <div className="p-5 flex-grow">
@@ -65,7 +54,7 @@ const JobCard: React.FC<JobCardProps> = ({ job, onSave, onDismiss, onViewDetails
 
                 <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">
                     <div className="flex items-center gap-2">
-                        <LocationMarkerIcon className="w-4 h-4 text-slate-500" />
+                        <MapPinIcon className="w-4 h-4 text-slate-500" />
                         <span>{job.location}</span>
                     </div>
                     <div className="flex items-center gap-2">

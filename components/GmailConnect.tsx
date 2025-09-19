@@ -1,8 +1,8 @@
 import React from 'react';
 // FIX: Corrected import path for types
 import type { GoogleUser } from '../types';
-import { GoogleIcon } from './icons/GoogleIcon';
-import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import { Google } from 'devicons-react';
+import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 interface GmailConnectProps {
     isConnected: boolean;
@@ -67,7 +67,7 @@ const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnec
                         onClick={onConnect}
                         className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
                     >
-                        <GoogleIcon className="w-5 h-5" />
+                        <Google className="w-5 h-5" />
                         Подключить Google
                     </button>
                 )}

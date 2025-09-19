@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 import { analyzeResumeWithAI } from '../services/geminiService';
 import type { Profile, SearchSettings } from '../types';
 

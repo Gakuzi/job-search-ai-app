@@ -1,7 +1,6 @@
 import React from 'react';
-// FIX: Corrected import path for constants
 import { AppStatus } from '../constants';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 interface MainHeaderProps {
     onSearch: () => void;
@@ -26,7 +25,7 @@ const MainHeader: React.FC<MainHeaderProps> = ({ onSearch, status }) => {
                     </>
                 ) : (
                     <>
-                        <SparklesIcon className="w-5 h-5" />
+                        <MagnifyingGlassIcon className="w-5 h-5" />
                         <span>Найти вакансии</span>
                     </>
                 )}

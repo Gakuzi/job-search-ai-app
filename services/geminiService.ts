@@ -1,244 +1,206 @@
-import { GoogleGenAI } from "@google/genai";
-import type { Job, Profile, PromptTemplate } from '../types';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+
+import type { Job, Profile, SearchSettings, HrAnalysisResult } from './types';
 
 const API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(API_KEY);
 
-if (!API_KEY) {
-    console.error("VITE_GEMINI_API_KEY is not set. Please add it to your environment variables.");
+const model = genAI.getGenerativeModel({
+  model: 'gemini-1.5-flash',
+  safetySettings: [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ],
+});
+
+async function runPrompt(prompt: string): Promise<string> {
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Error running Gemini prompt:', error);
+    throw new Error('Произошла ошибка при обращении к AI. Проверьте консоль для деталей.');
+  }
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
-
-const model = "gemini-2.5-flash";
-
-const generate = async (prompt: string, isJson: boolean = false) => {
+async function runJSONPrompt<T>(prompt: string): Promise<T> {
+    const resultText = await runPrompt(prompt + '\n\nОтвет должен быть только в формате JSON, без какого-либо другого текста или markdown-разметки.');
     try {
-        const result = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                ...(isJson && { responseMimeType: "application/json" }),
-                temperature: 0.5,
-            },
-        });
-        return result.text;
-    } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        throw new Error("Failed to get response from AI service.");
-    }
-};
-
-export const analyzeJobWithResume = async (job: Omit<Job, 'id' | 'userId' | 'profileId' | 'kanbanStatus'>, resume: string): Promise<string> => {
-    const prompt = `
-        Проанализируй, насколько подходит кандидат с данным резюме для следующей вакансии.
-        Дай краткий (2-3 предложения) и честный анализ сильных и слабых сторон кандидата относительно вакансии.
-        
-        Резюме кандидата:
-        ---
-        ${resume}
-        ---
-        
-        Описание вакансии:
-        ---
-        Должность: ${job.title} в ${job.company}
-        Описание: ${job.description}
-        Требования: ${job.requirements.join(', ')}
-        Обязанности: ${job.responsibilities.join(', ')}
-        ---
-    `;
-    return await generate(prompt);
-};
-
-
-export const adaptResumeForJob = async (job: Job, resume: string): Promise<string> => {
-    const prompt = `
-        Адаптируй следующее резюме, чтобы оно максимально соответствовало требованиям вакансии.
-        Сделай акцент на ключевых навыках и опыте, которые релевантны для этой должности.
-        Не выдумывай опыт, которого нет в исходном резюме. Просто переформулируй и расставь акценты.
-        Ответ должен быть только текстом адаптированного резюме, без лишних вступлений и заключений.
-
-        Исходное резюме:
-        ---
-        ${resume}
-        ---
-
-        Вакансия:
-        ---
-        Должность: ${job.title} в ${job.company}
-        Описание: ${job.description}
-        Требования: ${job.requirements.join(', ')}
-        Обязанности: ${job.responsibilities.join(', ')}
-        ---
-    `;
-    return await generate(prompt);
-};
-
-export const generateCoverLetter = async (job: Job, resume: string): Promise<string> => {
-    const prompt = `
-        Напиши сопроводительное письмо для отклика на вакансию.
-        Письмо должно быть профессиональным, вежливым и кратким (3-4 абзаца).
-        Используй информацию из резюме кандидата, чтобы показать его релевантность.
-        Обращайся к HR-менеджеру компании. Если имя неизвестно, используй "Уважаемый HR-менеджер".
-        В конце вырази готовность пройти собеседование.
-        Ответ должен быть только текстом письма.
-
-        Резюме кандидата:
-        ---
-        ${resume}
-        ---
-
-        Вакансия:
-        ---
-        Должность: ${job.title}
-        Компания: ${job.company}
-        Описание: ${job.description}
-        ---
-    `;
-    return await generate(prompt);
-};
-
-export const prepareForInterview = async (job: Job, resume: string): Promise<string> => {
-    const prompt = `
-        Подготовь кандидата к собеседованию на вакансию.
-        
-        1.  Сформулируй 5-7 наиболее вероятных технических вопросов по стеку вакансии.
-        2.  Сформулируй 3-4 поведенческих вопроса (soft-skills).
-        3.  Предложи 3-4 умных вопроса, которые кандидат может задать интервьюеру о компании, команде или проекте.
-        4.  Дай краткие советы (2-3 пункта) о том, на что обратить внимание, основываясь на резюме и вакансии.
-
-        Ответ верни в формате Markdown.
-
-        Резюме кандидата:
-        ---
-        ${resume}
-        ---
-
-        Вакансия:
-        ---
-        Должность: ${job.title} в ${job.company}
-        Описание: ${job.description}
-        Требования: ${job.requirements.join(', ')}
-        ---
-    `;
-    return await generate(prompt);
-};
-
-export const analyzeHrResponse = async (emailText: string, jobs: Job[]): Promise<{ jobId: string, newStatus: 'interview' | 'archive' }> => {
-    const jobTitles = jobs.map(j => `ID: ${j.id}, Title: ${j.title}, Company: ${j.company}`).join('\n');
-    const prompt = `
-        Проанализируй текст письма от HR. Определи, к какой из вакансий оно относится, и какой новый статус следует присвоить этой вакансии.
-        Возможные статусы: 'interview' (если приглашают на собеседование, созвон, тестовое задание) или 'archive' (если это отказ).
-        
-        Текст письма:
-        ---
-        ${emailText}
-        ---
-        
-        Список активных вакансий:
-        ---
-        ${jobTitles}
-        ---
-        
-        Ответ дай в формате JSON, где "jobId" - это ID наиболее подходящей вакансии, а "newStatus" - это новый статус ('interview' или 'archive').
-        Например: {"jobId": "some-uuid-123", "newStatus": "interview"}
-    `;
-    
-    const responseText = await generate(prompt, true);
-    try {
-        const parsed = JSON.parse(responseText.trim());
-        if (parsed.jobId && (parsed.newStatus === 'interview' || parsed.newStatus === 'archive')) {
-            return parsed;
-        }
-        throw new Error("Invalid JSON structure from AI.");
+        // Sometimes the model still wraps the JSON in ```json ... ```
+        const cleanJson = resultText.replace(/^```json\n|```$/g, '').trim();
+        return JSON.parse(cleanJson) as T;
     } catch (e) {
-        console.error("Failed to parse AI response for HR email analysis:", e);
-        throw new Error("AI returned an invalid response format.");
+        console.error('Failed to parse JSON response from AI:', resultText);
+        throw new Error('AI вернул некорректный JSON. Пожалуйста, попробуйте еще раз.');
     }
-};
+}
 
-export const compareJobs = async (jobs: Job[], resume: string): Promise<string> => {
-    const jobDescriptions = jobs.map(j => `
-        ---
+export async function analyzeResumeWithAI(resume: string): Promise<{ positions: string; location: string; }> {
+    const prompt = `
+    Проанализируй следующий текст резюме и извлеки из него ключевую информацию.
+    Меня интересуют только две вещи:
+    1.  **Должность (positions):** На какую должность или должности претендует кандидат? Укажи через запятую, если их несколько. Например: "Frontend Developer, React Developer".
+    2.  **Локация (location):** В каком городе или городах кандидат ищет работу? Если не указано, предположи, исходя из текста, или оставь поле пустым.
+
+    Резюме:
+    ---
+    ${resume}
+    ---
+
+    Ответ дай в формате JSON, вот так: { "positions": "...", "location": "..." }
+    `;
+    return runJSONPrompt<{ positions: string; location: string; }>(prompt);
+}
+
+
+export async function analyzeJobWithResume(job: Omit<Job, 'id'>, resume: string): Promise<string> {
+  const prompt = `
+    Оцени, насколько вакансия подходит кандидату по 10-балльной шкале. 
+    Кратко (2-3 предложения) объясни свою оценку, сделав акцент на ключевых совпадениях или несовпадениях.
+    
+    Резюме кандидата:
+    ---
+    ${resume}
+    ---
+    Вакансия: 
+    Должность: ${job.title}
+    Компания: ${job.company}
+    Описание: ${job.description}
+    ---
+
+    Пример ответа: "7/10. Отлично подходит по стеку (React, TypeScript), но опыт кандидата (2 года) меньше требуемого (3+)."
+  `;
+  return runPrompt(prompt);
+}
+
+// FIX: Implementing the missing function for the Prompt Editor.
+export async function executeCustomPrompt(template: string, job: Job, profile: Profile): Promise<string> {
+    // This function replaces placeholders like {{job.title}} with actual data.
+    const compiledPrompt = template
+        .replace(/\{\{\s*job\.title\s*\}\}/g, job.title)
+        .replace(/\{\{\s*job\.company\s*\}\}/g, job.company || '')
+        .replace(/\{\{\s*job\.description\s*\}\}/g, job.description)
+        .replace(/\{\{\s*profile\.resume\s*\}\}/g, profile.resume);
+    
+    return runPrompt(compiledPrompt);
+}
+
+
+export async function adaptResumeForJob(job: Job, resume: string): Promise<string> {
+  const prompt = `
+    Адаптируй следующее резюме, чтобы оно максимально соответствовало требованиям вакансии. 
+    Сделай акцент на ключевых навыках и опыте, которые релевантны для этой должности. 
+    Не выдумывай опыт, которого нет в исходном резюме. Просто переформулируй и расставь акценты. 
+    Ответ должен быть только текстом адаптированного резюме, без лишних вступлений и заключений.
+
+    Исходное резюме:
+    ---
+    ${resume}
+    ---
+    
+    Вакансия:
+    ---
+    Должность: ${job.title} в ${job.company}
+    Описание: ${job.description}
+    ---
+  `;
+  return runPrompt(prompt);
+}
+
+export async function generateCoverLetter(job: Job, resume: string): Promise<string> {
+    const prompt = `
+    Напиши сопроводительное письмо для отклика на вакансию. 
+    Письмо должно быть профессиональным, вежливым и кратким (3-4 абзаца). 
+    Используй информацию из резюме кандидата, чтобы показать его релевантность. 
+    Обращайся к HR-менеджеру компании. Если имя неизвестно, используй 'Уважаемый HR-менеджер'. 
+    В конце вырази готовность пройти собеседование. Ответ должен быть только текстом письма.
+
+    Резюме кандидата:
+    ---
+    ${resume}
+    ---
+
+    Вакансия:
+    ---
+    Должность: ${job.title}
+    Компания: ${job.company}
+    Описание: ${job.description}
+    ---
+  `;
+  return runPrompt(prompt);
+}
+
+export async function prepareForInterview(job: Job, resume: string): Promise<string> {
+    const prompt = `
+    Подготовь меня к собеседованию на вакансию. 
+    На основе моего резюме и описания вакансии, составь список из 5-7 наиболее вероятных технических и поведенческих вопросов, которые мне могут задать. 
+    Также предложи 2-3 умных вопроса, которые я могу задать интервьюеру о команде, проекте или компании.
+
+    Мое резюме:
+    ---
+    ${resume}
+    ---
+
+    Вакансия:
+    ---
+    Должность: ${job.title}
+    Компания: ${job.company}
+    Описание: ${job.description}
+    ---
+  `;
+  return runPrompt(prompt);
+}
+
+export async function analyzeHrResponse(emailText: string, jobs: Job[]): Promise<HrAnalysisResult> {
+    const jobList = jobs.map(j => `ID: ${j.id}, Должность: ${j.title}, Компания: ${j.company}`).join('\n');
+    const prompt = `
+    Проанализируй текст письма от HR и определи, к какой из моих вакансий оно относится. 
+    Также определи новый статус для этой вакансии.
+    Возможные статусы: "Собеседование", "Техническое задание", "Отказ".
+    
+    Текст письма:
+    ---
+    ${emailText}
+    ---
+    
+    Мой список активных вакансий:
+    ---
+    ${jobList}
+    ---
+    
+    Ответ дай в формате JSON, вот так: { "jobId": "...", "newStatus": "..." }
+    Если не удалось однозначно определить вакансию, в поле jobId верни "not_found".
+    `;
+    return runJSONPrompt<HrAnalysisResult>(prompt);
+}
+
+export async function compareJobs(jobs: Job[], resume: string): Promise<string> {
+    const jobList = jobs.map((j, i) => `
+        ВАКАНСИЯ ${i+1}:
         ID: ${j.id}
         Должность: ${j.title}
         Компания: ${j.company}
-        Зарплата: ${j.salary}
-        Ключевые требования: ${j.requirements.slice(0, 5).join(', ')}
-        ---
-    `).join('\n');
+        Описание: ${j.description}
+    `).join('\n---\n');
 
     const prompt = `
-        Сравни следующие вакансии с точки зрения кандидата с данным резюме.
-        Для каждой вакансии оцени по 10-балльной шкале, насколько она подходит кандидату.
-        Дай краткое (2-3 предложения) резюме по каждой вакансии, выделяя плюсы и минусы.
-        В конце сделай общий вывод и порекомендуй, какая из вакансий является наиболее перспективной.
-        Ответ верни в формате Markdown.
-
-        Резюме кандидата:
-        ---
-        ${resume}
-        ---
-
-        Вакансии для сравнения:
-        ${jobDescriptions}
-    `;
-
-    return await generate(prompt);
-};
-
-export const checkJobArchived = async (jobDescription: string): Promise<boolean> => {
-    const prompt = `
-        Проанализируй текст со страницы вакансии. Если в тексте есть явные указания, что вакансия "в архиве", "закрыта", "неактивна" или "больше не доступна", ответь "true". В противном случае ответь "false".
-        Текст страницы:
-        ---
-        ${jobDescription}
-        ---
-    `;
-    const response = await generate(prompt);
-    return response.toLowerCase().includes('true');
-};
-
-export const generateQuickApplyMessage = async (job: Job, resume: string, profile: Profile, type: 'email' | 'whatsapp' | 'telegram'): Promise<{ subject?: string; body: string; }> => {
-    const prompt = `
-        Сгенерируй короткое, но профессиональное сообщение для быстрого отклика на вакансию через ${type}.
-        Сообщение должно быть адаптировано под платформу (email более формальный, мессенджеры - менее).
-        Обязательно упомяни должность.
-        Используй информацию из резюме, чтобы кратко подчеркнуть релевантность кандидата.
-        Если это email, сгенерируй также тему письма.
-        Ответ дай в формате JSON. Для email: {"subject": "Тема письма", "body": "Текст письма"}. Для мессенджеров: {"body": "Текст сообщения"}.
-        
-        Резюме:
-        ---
-        ${resume}
-        ---
-
-        Вакансия:
-        ---
-        Должность: ${job.title} в ${job.company}
-        ---
-
-        Профиль кандидата:
-        ---
-        Имя: (предположим, имя есть в резюме)
-        Желаемая должность: ${profile.searchSettings.positions}
-        ---
-    `;
-    const responseText = await generate(prompt, true);
-    try {
-        return JSON.parse(responseText.trim());
-    } catch(e) {
-        console.error("Failed to parse AI response for quick apply:", e);
-        throw new Error("AI returned an invalid response format.");
-    }
-};
-
-export const executeCustomPrompt = async (template: string, job: Job, profile: Profile): Promise<string> => {
-    // Replace placeholders in the template
-    const filledPrompt = template
-        .replace(/{{job.title}}/g, job.title)
-        .replace(/{{job.company}}/g, job.company)
-        .replace(/{{job.description}}/g, job.description)
-        .replace(/{{profile.resume}}/g, profile.resume);
+    Сравни несколько вакансий и порекомендуй лучшую для меня. 
+    Проанализируй их сильные и слабые стороны относительно моего резюме.
     
-    return await generate(filledPrompt);
-};
+    Мое резюме:
+    ---
+    ${resume}
+    ---
+    
+    Вакансии для сравнения:
+    ---
+    ${jobList}
+    ---
+
+    В ответе сначала кратко подытожь плюсы и минусы каждой вакансии, а затем сделай четкую рекомендацию, какая из них является лучшим выбором и почему.
+    `;
+    return runPrompt(prompt);
+}
