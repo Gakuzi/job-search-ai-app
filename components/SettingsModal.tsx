@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
-import type { Profile, PromptTemplate, GoogleUser } from '../types';
+import type { Profile, PromptTemplate, GoogleUser, SearchSettings } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
@@ -23,6 +23,20 @@ interface SettingsModalProps {
     onEditPrompt: (template: PromptTemplate) => void;
 }
 
+// FIX: Provide a default object for search settings to prevent crash on new profiles.
+const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
+    positions: '',
+    location: '',
+    salary: 0,
+    limit: 20, // Default limit
+    platforms: {
+        hh: true,
+        habr: false,
+        avito: true,
+    }
+};
+
+
 const SettingsModal: React.FC<SettingsModalProps> = ({
     profile,
     onClose,
@@ -36,7 +50,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState('profile');
     const [resume, setResume] = useState(profile.resume);
-    const [searchSettings, setSearchSettings] = useState(profile.searchSettings);
+    // FIX: Initialize with default settings if they don't exist on the profile.
+    const [searchSettings, setSearchSettings] = useState<SearchSettings>(profile.searchSettings || DEFAULT_SEARCH_SETTINGS);
     const [avitoClientId, setAvitoClientId] = useState('');
     const [avitoClientSecret, setAvitoClientSecret] = useState('');
 
@@ -45,7 +60,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     useEffect(() => {
         setResume(profile.resume);
-        setSearchSettings(profile.searchSettings);
+        // FIX: Also apply default settings when the profile prop changes.
+        setSearchSettings(profile.searchSettings || DEFAULT_SEARCH_SETTINGS);
     }, [profile]);
 
     useEffect(() => {
@@ -55,14 +71,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     }, [debouncedResume, profile.resume, onUpdateProfile]);
 
     useEffect(() => {
-        if (JSON.stringify(debouncedSettings) !== JSON.stringify(profile.searchSettings)) {
-            onUpdateProfile({ searchSettings: debouncedSettings });
+        // Prevent saving default settings to a profile that doesn't have any yet,
+        // unless the user has actually changed them.
+        if (debouncedSettings && JSON.stringify(debouncedSettings) !== JSON.stringify(profile.searchSettings)) {
+             // Only update if searchSettings has been initialized.
+            if(profile.searchSettings || Object.values(debouncedSettings).some(v => v)){
+                 onUpdateProfile({ searchSettings: debouncedSettings });
+            }
         }
     }, [debouncedSettings, profile.searchSettings, onUpdateProfile]);
     
      useEffect(() => {
-        getApiKey('avito_client_id').then(setAvitoClientId);
-        getApiKey('avito_client_secret').then(setAvitoClientSecret);
+        getApiKey('avito_client_id').then(id => setAvitoClientId(id || ''));
+        getApiKey('avito_client_secret').then(secret => setAvitoClientSecret(secret || ''));
     }, []);
 
     const handleSaveApiKeys = () => {
@@ -72,20 +93,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value, type } = e.target;
-        
-        if (name.startsWith('platforms.')) {
-            const platform = name.split('.')[1] as keyof typeof searchSettings.platforms;
-            setSearchSettings(prev => ({
-                ...prev,
-                platforms: { ...prev.platforms, [platform]: (e.target as HTMLInputElement).checked }
-            }));
-        } else {
-            setSearchSettings(prev => ({
-                ...prev,
-                [name]: type === 'number' ? parseInt(value, 10) || 0 : value,
-            }));
-        }
+        const { name, value } = e.target;
+        const type = e.target.type;
+
+        setSearchSettings(prev => {
+            if (!prev) return DEFAULT_SEARCH_SETTINGS; // Should not happen with the fix, but for safety.
+            if (name.startsWith('platforms.')) {
+                const platform = name.split('.')[1] as keyof SearchSettings['platforms'];
+                return {
+                    ...prev,
+                    platforms: { ...prev.platforms, [platform]: (e.target as HTMLInputElement).checked }
+                };
+            } else {
+                return {
+                    ...prev,
+                    [name]: type === 'number' ? parseInt(value, 10) || 0 : value,
+                };
+            }
+        });
     };
 
     const tabs = [
@@ -93,6 +118,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         { id: 'integrations', label: 'Интеграции' },
         { id: 'prompts', label: 'Промпты' },
     ];
+
+    const currentSettings = searchSettings || DEFAULT_SEARCH_SETTINGS;
 
     return (
         <Modal title="Настройки" onClose={onClose} footer={<button onClick={onClose} className="px-4 py-2 text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-md hover:bg-slate-300 dark:hover:bg-slate-500">Закрыть</button>}>
@@ -122,7 +149,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200">Резюме для профиля "{profile.name}"</h3>
                                 <p className="text-sm text-slate-500 mb-2">Это резюме будет использоваться AI для анализа вакансий и генерации откликов.</p>
                                 <textarea
-                                    value={resume}
+                                    value={resume || ''}
                                     onChange={(e) => setResume(e.target.value)}
                                     rows={10}
                                     className="w-full p-2 text-sm bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -131,16 +158,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div>
                                 <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200">Параметры поиска</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                                    <input name="positions" value={searchSettings.positions} onChange={handleSettingsChange} placeholder="Должность (напр., React Developer)" className="settings-input" />
-                                    <input name="location" value={searchSettings.location} onChange={handleSettingsChange} placeholder="Локация" className="settings-input" />
-                                    <input name="salary" type="number" value={searchSettings.salary} onChange={handleSettingsChange} placeholder="Зарплата от" className="settings-input" />
-                                    <input name="limit" type="number" value={searchSettings.limit} onChange={handleSettingsChange} placeholder="Лимит вакансий" className="settings-input" />
+                                    <input name="positions" value={currentSettings.positions} onChange={handleSettingsChange} placeholder="Должность (напр., React Developer)" className="settings-input" />
+                                    <input name="location" value={currentSettings.location} onChange={handleSettingsChange} placeholder="Локация" className="settings-input" />
+                                    <input name="salary" type="number" value={currentSettings.salary || ''} onChange={handleSettingsChange} placeholder="Зарплата от" className="settings-input" />
+                                    <input name="limit" type="number" value={currentSettings.limit || ''} onChange={handleSettingsChange} placeholder="Лимит вакансий" className="settings-input" />
                                     <div className="md:col-span-2">
                                         <h4 className="text-sm font-medium mb-1">Платформы:</h4>
                                         <div className="flex items-center gap-4">
-                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.hh" checked={searchSettings.platforms.hh} onChange={handleSettingsChange}/> hh.ru</label>
-                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.habr" disabled checked={searchSettings.platforms.habr} onChange={handleSettingsChange}/> Habr Карьера (скоро)</label>
-                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.avito" checked={searchSettings.platforms.avito} onChange={handleSettingsChange}/> Avito Работа</label>
+                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.hh" checked={currentSettings.platforms.hh} onChange={handleSettingsChange}/> hh.ru</label>
+                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.habr" disabled checked={currentSettings.platforms.habr} onChange={handleSettingsChange}/> Habr Карьера (скоро)</label>
+                                            <label className="flex items-center gap-2"><input type="checkbox" name="platforms.avito" checked={currentSettings.platforms.avito} onChange={handleSettingsChange}/> Avito Работа</label>
                                         </div>
                                     </div>
                                 </div>

@@ -11,7 +11,8 @@ export const firebaseConfig = {
   appId: (import.meta as any).env.VITE_FIREBASE_APP_ID
 };
 
-const isConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("AIzaSy");
+// MODIFIED: Removed the check for "AIzaSy" to allow using the provided key for local development.
+const isConfigured = !!firebaseConfig.apiKey;
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;

@@ -41,7 +41,7 @@ const findJobsOnHH = async (settings: SearchSettings): Promise<Omit<Job, 'id' | 
     return Promise.resolve([]);
 };
 
-const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy');
+const isFirebaseConfigured = !!firebaseConfig.apiKey;
 const isGoogleConfigured = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID && !(import.meta as any).env.VITE_GOOGLE_CLIENT_ID.includes('your-');
 
 const DEFAULT_PROMPTS: PromptTemplate[] = [
