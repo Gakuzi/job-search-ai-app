@@ -1,14 +1,13 @@
 {
-  "framework": "vite",
   "build": {
     "env": {
-      "VITE_API_KEY": "@vite-api-key",
-      "VITE_AUTH_DOMAIN": "@vite-auth-domain",
-      "VITE_PROJECT_ID": "@vite-project-id",
-      "VITE_STORAGE_BUCKET": "@vite-storage-bucket",
-      "VITE_MESSAGING_SENDER_ID": "@vite-messaging-sender-id",
-      "VITE_APP_ID": "@vite-app-id",
-      "VITE_GEMINI_API_KEY": "@vite-gemini-api-key"
+        "VITE_API_KEY": "$VITE_API_KEY",
+        "VITE_AUTH_DOMAIN": "$VITE_AUTH_DOMAIN",
+        "VITE_PROJECT_ID": "$VITE_PROJECT_ID",
+        "VITE_STORAGE_BUCKET": "$VITE_STORAGE_BUCKET",
+        "VITE_MESSAGING_SENDER_ID": "$VITE_MESSAGING_SENDER_ID",
+        "VITE_APP_ID": "$VITE_APP_ID",
+        "VITE_GEMINI_API_KEY": "$VITE_GEMINI_API_KEY"
     }
   }
 }
