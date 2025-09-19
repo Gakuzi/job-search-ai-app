@@ -1,118 +1,179 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
-// FIX: Corrected import path for types
-import type { Profile } from '../types';
 import { SparklesIcon } from './icons/SparklesIcon';
+import { analyzeResumeWithAI } from '../services/geminiService';
+import type { Profile, SearchSettings } from '../types';
 
 interface SetupWizardModalProps {
-    onFinish: (profileData: Omit<Profile, 'id' | 'userId'>) => void;
+    onFinish: (profile: Omit<Profile, 'id' | 'userId'>) => void;
+    initialProfile?: Profile | null; // Accept an optional profile to edit
 }
 
-const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish }) => {
+const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ onFinish, initialProfile }) => {
     const [step, setStep] = useState(1);
-    const [profileName, setProfileName] = useState('Основной профиль');
-    const [resume, setResume] = useState('');
-    const [position, setPosition] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    
+    // FIX: Initialize state with initialProfile data if it exists, otherwise use defaults.
+    const [profileName, setProfileName] = useState(initialProfile?.name || 'Основной');
+    const [resume, setResume] = useState(initialProfile?.resume || '');
+    const [searchSettings, setSearchSettings] = useState<SearchSettings>(initialProfile?.searchSettings || {
+        positions: '',
+        location: '',
+        salary: 0,
+        limit: 20,
+        platforms: { hh: true, avito: true, habr: false }
+    });
+    
+    // If we are editing, we might want to start on a different step, e.g., step 2.
+    useEffect(() => {
+        if (initialProfile) {
+            setStep(2); 
+        }
+    }, [initialProfile]);
 
-    const handleNext = () => {
-        if (step < 3) {
-            setStep(step + 1);
-        } else {
-            // Finish
-            const newProfile: Omit<Profile, 'id' | 'userId'> = {
-                name: profileName.trim(),
-                resume: resume.trim(),
-                searchSettings: {
-                    platforms: { hh: true, habr: false, avito: false },
-                    positions: position.trim(),
-                    location: 'Москва', // Default value
-                    salary: 100000, // Default value
-                    limit: 20,
-                    additional_requirements: ''
-                }
-            };
-            onFinish(newProfile);
+
+    const handleResumeAnalysis = async () => {
+        if (!resume.trim()) {
+            alert('Пожалуйста, вставьте текст вашего резюме.');
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const analysis = await analyzeResumeWithAI(resume);
+            setSearchSettings(prev => ({ 
+                ...prev,
+                positions: analysis.positions, 
+                location: analysis.location 
+            }));
+            setStep(3);
+        } catch (error) {
+            console.error("Resume analysis failed:", error);
+            alert('Не удалось проанализировать резюме. Пожалуйста, попробуйте еще раз.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    const isNextDisabled = () => {
-        if (step === 1 && !profileName.trim()) return true;
-        if (step === 2 && resume.trim().length < 50) return true;
-        if (step === 3 && !position.trim()) return true;
-        return false;
+    const handleFinalSubmit = () => {
+        if (!profileName.trim()) {
+            alert('Пожалуйста, введите название профиля.');
+            return;
+        }
+        onFinish({ name: profileName, resume, searchSettings });
     };
+    
+    const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value, type, checked } = e.target;
+        if (name.startsWith('platforms.')) {
+            const platform = name.split('.')[1] as keyof SearchSettings['platforms'];
+             setSearchSettings(prev => ({...prev, platforms: {...prev.platforms, [platform]: checked}}));
+        } else {
+             setSearchSettings(prev => ({...prev, [name]: type === 'number' ? parseInt(value) || 0 : value }));
+        }
+    }
 
-    const wizardFooter = (
-        <button
-            onClick={handleNext}
-            disabled={isNextDisabled()}
-            className="px-6 py-2 text-sm font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-slate-400"
-        >
-            {step === 3 ? 'Завершить настройку' : 'Далее'}
-        </button>
-    );
-
-    return (
-        <Modal
-            title="Добро пожаловать!"
-            onClose={() => {}} // Can't close wizard
-            footer={wizardFooter}
-        >
-            <div className="space-y-4">
-                <div className="text-center">
-                    <SparklesIcon className="w-12 h-12 text-primary-500 mx-auto" />
-                    <p className="mt-2 text-slate-600 dark:text-slate-400">Давайте настроим вашего AI-ассистента для поиска работы.</p>
-                </div>
-                
-                {/* Progress Bar */}
-                <div className="flex justify-center items-center gap-2">
-                    {[1, 2, 3].map(s => (
-                        <div key={s} className={`w-1/3 h-2 rounded-full ${s <= step ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}`}></div>
-                    ))}
-                </div>
-
-                {step === 1 && (
-                    <div>
-                        <h3 className="font-semibold text-lg text-center">Шаг 1: Название профиля</h3>
-                        <p className="text-sm text-slate-500 text-center mt-1 mb-4">Вы можете создать несколько профилей для поиска разных должностей.</p>
-                        <input
-                            type="text"
-                            value={profileName}
-                            onChange={(e) => setProfileName(e.target.value)}
-                            placeholder="Например, 'Frontend разработчик' или 'Основной'"
-                            className="w-full p-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md"
-                        />
+    const renderStep = () => {
+        switch (step) {
+            case 1: // Welcome Step (only for new profiles)
+                return (
+                    <div className="text-center">
+                        <h2 className="text-2xl font-bold mb-2">Добро пожаловать!</h2>
+                        <p className="text-slate-600 dark:text-slate-300">Давайте настроим ваш первый профиль для поиска работы. Это займет всего минуту.</p>
+                        <button onClick={() => setStep(2)} className="mt-6 btn btn-primary">
+                            Начать настройку
+                        </button>
                     </div>
-                )}
-
-                {step === 2 && (
-                     <div>
-                        <h3 className="font-semibold text-lg text-center">Шаг 2: Ваше резюме</h3>
-                        <p className="text-sm text-slate-500 text-center mt-1 mb-4">Вставьте сюда полный текст вашего резюме. AI будет использовать его для анализа вакансий.</p>
+                );
+            case 2: // Resume Input Step
+                return (
+                    <div>
+                        <h2 className="text-xl font-bold mb-3">Шаг 1: Ваше резюме</h2>
+                        <p className="text-sm text-slate-500 mb-3">Вставьте полный текст вашего резюме. Наш ИИ проанализирует его, чтобы автоматически заполнить параметры поиска.</p>
                         <textarea
                             value={resume}
                             onChange={(e) => setResume(e.target.value)}
-                            rows={10}
-                            placeholder="Опыт работы, навыки, образование..."
-                            className="w-full p-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md"
+                            rows={12}
+                            placeholder="Вставьте сюда текст вашего резюме..."
+                            className="w-full p-2 text-sm bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
-                         {resume.trim().length > 0 && resume.trim().length < 50 && <p className="text-xs text-red-500 mt-1">Пожалуйста, вставьте более полное резюме.</p>}
+                        <div className="flex justify-end mt-4">
+                            <button onClick={handleResumeAnalysis} disabled={isLoading || !resume.trim()} className="btn btn-primary">
+                                {isLoading ? 'Анализируем...' : 'Проанализировать резюме'}
+                            </button>
+                        </div>
                     </div>
-                )}
+                );
+            case 3: // Settings Confirmation Step
+                return (
+                    <div>
+                        <h2 className="text-xl font-bold mb-3">Шаг 2: Параметры поиска</h2>
+                        <p className="text-sm text-slate-500 mb-4">Наш ИИ проанализировал ваше резюме и предлагает следующие параметры. Вы можете их изменить.</p>
+                        <div className="space-y-4">
+                             <input type="text" name="profileName" value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Название профиля" className="settings-input" />
+                             <input type="text" name="positions" value={searchSettings.positions} onChange={handleSettingsChange} placeholder="Должность" className="settings-input" />
+                             <input type="text" name="location" value={searchSettings.location} onChange={handleSettingsChange} placeholder="Локация" className="settings-input" />
+                             <input type="number" name="salary" value={searchSettings.salary || ''} onChange={handleSettingsChange} placeholder="Желаемая зарплата" className="settings-input" />
+                        </div>
+                         <div className="mt-6">
+                            <h4 className="text-sm font-medium mb-2">Платформы для поиска:</h4>
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2"><input type="checkbox" name="platforms.hh" checked={searchSettings.platforms.hh} onChange={handleSettingsChange}/> hh.ru</label>
+                                <label className="flex items-center gap-2"><input type="checkbox" name="platforms.habr" disabled checked={searchSettings.platforms.habr} onChange={handleSettingsChange}/> Habr Карьера (скоро)</label>
+                                <label className="flex items-center gap-2"><input type="checkbox" name="platforms.avito" checked={searchSettings.platforms.avito} onChange={handleSettingsChange}/> Avito Работа</label>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center mt-6">
+                            <button onClick={() => setStep(2)} className="text-sm text-slate-600 hover:underline">Назад</button>
+                            <button onClick={handleFinalSubmit} className="btn btn-primary">
+                                {initialProfile ? 'Сохранить изменения' : 'Завершить и сохранить'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            default:
+                return <div>Что-то пошло не так.</div>;
+        }
+    };
 
-                 {step === 3 && (
-                     <div>
-                        <h3 className="font-semibold text-lg text-center">Шаг 3: Какую работу ищем?</h3>
-                        <p className="text-sm text-slate-500 text-center mt-1 mb-4">Укажите ключевую должность для первого поиска.</p>
-                        <input
-                            type="text"
-                            value={position}
-                            onChange={(e) => setPosition(e.target.value)}
-                            placeholder="Например, 'React Developer' или 'Product Manager'"
-                            className="w-full p-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md"
-                        />
-                    </div>
-                )}
+    return (
+        <Modal 
+            title={initialProfile ? `Редактирование профиля` : 'Мастер настройки профиля'} 
+            onClose={() => {}}
+            showCloseButton={false}
+        >
+            <div className="p-4">
+                 <div className="flex items-center justify-center mb-6">
+                    <SparklesIcon className="w-8 h-8 text-primary-500 mr-2" />
+                    <h1 className="text-xl font-bold">
+                        {initialProfile ? `Обновление "${profileName}"` : 'AI-помощник настройки'}
+                    </h1>
+                </div>
+                {renderStep()}
+                 <style>{`
+                    .settings-input {
+                        width: 100%;
+                        padding: 0.5rem 0.75rem;
+                        font-size: 0.875rem;
+                        background-color: #f1f5f9;
+                        border: 1px solid #cbd5e1;
+                        border-radius: 0.375rem;
+                        outline: none;
+                        color: #0f172a;
+                    }
+                    .dark .settings-input {
+                        background-color: #334155;
+                        border-color: #475569;
+                        color: #e2e8f0;
+                    }
+                    .settings-input:focus {
+                        border-color: #3b82f6;
+                        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+                    }
+                    .btn { padding: 8px 16px; border-radius: 6px; font-weight: 500; transition: background-color 0.2s; }
+                    .btn-primary { background-color: #4f46e5; color: white; }
+                    .btn-primary:hover { background-color: #4338ca; }
+                    .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; }
+                `}</style>
             </div>
         </Modal>
     );

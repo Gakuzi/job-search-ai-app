@@ -50,11 +50,8 @@ const DEFAULT_PROMPTS: PromptTemplate[] = [
 ];
 
 
-// This component contains the main application logic and is only rendered when Firebase is configured.
-// This prevents hooks like useAuthState from being called with a null `auth` object.
 const MainApplication: React.FC = () => {
     const [theme, setTheme] = useTheme();
-    // This hook is now safe because MainApplication is only rendered when auth is initialized.
     const [user, loadingAuth] = useAuthState(auth!);
 
     const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
@@ -90,6 +87,8 @@ const MainApplication: React.FC = () => {
     useEffect(() => {
         if (profiles.length > 0 && (!activeProfileId || !profiles.some(p => p.id === activeProfileId))) {
             setActiveProfileId(profiles[0].id);
+        } else if (profiles.length === 0 && activeProfileId) {
+            setActiveProfileId(null);
         }
     }, [profiles, activeProfileId, setActiveProfileId]);
 
@@ -157,6 +156,9 @@ const MainApplication: React.FC = () => {
         try {
             let foundJobs: Omit<Job, 'id' | 'userId' | 'profileId' | 'kanbanStatus'>[] = [];
             const settings = activeProfile.searchSettings;
+            if (!settings) {
+                throw new Error("Параметры поиска не настроены. Зайдите в Настройки -> Профиль и Поиск.");
+            }
 
             if (settings.platforms.hh) {
                 const hhJobs = await findJobsOnHH(settings);
@@ -207,19 +209,16 @@ const MainApplication: React.FC = () => {
     
     const handleAdaptResume = (job: Job) => {
         if (!activeProfile) return;
-        setSelectedJob(job);
         runAIAction(gemini.adaptResumeForJob(job, activeProfile.resume));
     };
 
     const handleGenerateEmail = (job: Job) => {
         if (!activeProfile) return;
-        setSelectedJob(job);
         runAIAction(gemini.generateCoverLetter(job, activeProfile.resume));
     }
     
     const handlePrepareForInterview = (job: Job) => {
         if (!activeProfile) return;
-        setSelectedJob(job);
         runAIAction(gemini.prepareForInterview(job, activeProfile.resume));
     }
     
@@ -273,9 +272,18 @@ const MainApplication: React.FC = () => {
         }
     };
     
+    // LOGIC RESTORE: Handles finishing the setup wizard.
+    // Differentiates between creating a new profile and updating an existing one.
     const handleFinishSetup = async (profileData: Omit<Profile, 'id' | 'userId'>) => {
         if (user) {
-            await firestore.addProfile(user.uid, profileData);
+            // If we are in 'rerun-wizard' mode, we update the active profile
+            if (activeModal === 'rerun-wizard' && activeProfile) {
+                await firestore.updateProfile(activeProfile.id, profileData);
+            } else {
+                // Otherwise, we create a new one.
+                const newProfileId = await firestore.addProfile(user.uid, profileData);
+                setActiveProfileId(newProfileId); // Switch to the new profile
+            }
             setActiveModal(null);
         }
     };
@@ -283,6 +291,26 @@ const MainApplication: React.FC = () => {
     const handleUpdateProfile = (updates: Partial<Profile>) => {
         if (activeProfile) {
             firestore.updateProfile(activeProfile.id, updates);
+        }
+    };
+
+    // LOGIC RESTORE: Adds a new, empty profile from the settings.
+    const handleAddProfile = async (name: string) => {
+        if (user) {
+            const newProfileData = { name, resume: '', searchSettings: { positions: '', location: '', salary: 0, limit: 20, platforms: { hh: true, avito: true, habr: false } } };
+            const newProfileId = await firestore.addProfile(user.uid, newProfileData);
+            setActiveProfileId(newProfileId);
+            setActiveModal(null); // Close settings modal
+            setTimeout(() => setActiveModal('settings'), 50); // Reopen settings modal
+        }
+    };
+
+    // LOGIC RESTORE: Deletes the currently active profile.
+    const handleDeleteProfile = async () => {
+        if (activeProfile) {
+            await firestore.deleteProfile(activeProfile.id);
+            // activeProfileId will be updated by the useEffect hook
+            setActiveModal(null); // Close settings
         }
     };
 
@@ -325,7 +353,13 @@ const MainApplication: React.FC = () => {
                 </div>
                 
                 {/* Modals */}
-                {user && profiles.length === 0 && <SetupWizardModal onFinish={handleFinishSetup} />}
+                {/* LOGIC RESTORE: Show wizard if no profiles exist OR if we are re-running it */}
+                {( (user && profiles.length === 0 && !loadingAuth) || activeModal === 'rerun-wizard') && 
+                    <SetupWizardModal 
+                        onFinish={handleFinishSetup} 
+                        initialProfile={activeModal === 'rerun-wizard' ? activeProfile : undefined}
+                    />
+                }
 
                 {activeModal === 'scanResults' && (
                     <ScanResults
@@ -378,8 +412,10 @@ const MainApplication: React.FC = () => {
                         profile={activeProfile}
                         onClose={() => setActiveModal(null)}
                         onUpdateProfile={handleUpdateProfile}
-                        onDeleteProfile={() => {}}
-                        onAddProfile={(name) => {}}
+                        // LOGIC RESTORE: Pass down the new handlers
+                        onAddProfile={handleAddProfile}
+                        onDeleteProfile={handleDeleteProfile}
+                        onRerunWizard={() => setActiveModal('rerun-wizard')}
                         isGoogleConnected={isGoogleConnected}
                         googleUser={googleUser}
                         onGoogleConnect={() => gAuth.getToken(tokenClient)}
@@ -416,8 +452,6 @@ const MainApplication: React.FC = () => {
 }
 
 const App: React.FC = () => {
-    // Firebase is essential for the app to run (auth, database).
-    // The Google Client ID is optional for startup and only required for Gmail features.
     if (!isFirebaseConfigured) {
         return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
