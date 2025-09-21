@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import type { User } from 'firebase/auth';
 import Modal from './Modal';
-import type { Profile, PromptTemplate, GoogleUser } from '../types';
+import type { Profile, PromptTemplate } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 
 interface SettingsModalProps {
+    user: User;
     profile: Profile;
     onClose: () => void;
     onUpdateProfile: (updates: Partial<Profile>) => void;
@@ -14,7 +16,6 @@ interface SettingsModalProps {
     onAddProfile: (name: string) => void;
     
     isGoogleConnected: boolean;
-    googleUser: GoogleUser | null;
     onGoogleConnect: () => void;
     onGoogleDisconnect: () => void;
 
@@ -24,11 +25,11 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
+    user,
     profile,
     onClose,
     onUpdateProfile,
     isGoogleConnected,
-    googleUser,
     onGoogleConnect,
     onGoogleDisconnect,
     promptTemplates,
@@ -151,7 +152,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div className="space-y-6">
                             <GmailConnect 
                                 isConnected={isGoogleConnected}
-                                user={googleUser}
+                                user={user}
                                 onConnect={onGoogleConnect}
                                 onDisconnect={onGoogleDisconnect}
                             />
