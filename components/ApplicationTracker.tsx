@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import type { Job, KanbanStatus, Profile } from '../types';
 import KanbanBoard from './KanbanBoard';
 import { GoogleIcon } from './icons/GoogleIcon';
-import { ArrowPathIcon } from './icons/ArrowPathIcon';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 
 interface ApplicationTrackerProps {
     jobs: Job[];

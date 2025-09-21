@@ -1,7 +1,7 @@
 import React from 'react';
 import type { User } from 'firebase/auth';
 import { GoogleIcon } from './icons/GoogleIcon';
-import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 interface GmailConnectProps {
     isConnected: boolean;
@@ -68,10 +68,11 @@ const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnec
                 ) : (
                     <button
                         onClick={onConnect}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                        disabled={!isReady}
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <GoogleIcon className="w-5 h-5" />
-                        Подключить Google
+                        {isReady ? 'Подключить Google' : 'Инициализация...'}
                     </button>
                 )}
             </div>
