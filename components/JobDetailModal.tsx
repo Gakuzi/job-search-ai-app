@@ -4,15 +4,15 @@ import { v4 as uuidv4 } from 'uuid';
 // FIX: Corrected import path for types
 import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
-import { XCircleIcon } from './icons/XCircleIcon';
-import { ClipboardIcon } from './icons/ClipboardIcon';
-import { SendIcon } from './icons/SendIcon';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
-import { MailIcon } from './icons/MailIcon';
-import { WhatsappIcon } from './icons/WhatsappIcon';
-import { TelegramIcon } from './icons/TelegramIcon';
-import { PlusCircleIcon } from './icons/PlusCircleIcon';
+import { XCircleIcon } from '@/components/icons/XCircleIcon';
+import { ClipboardIcon } from '@/components/icons/ClipboardIcon';
+import { SendIcon } from '@/components/icons/SendIcon';
+import { PencilSquareIcon } from '@/components/icons/PencilSquareIcon';
+import { ChatBubbleIcon } from '@/components/icons/ChatBubbleIcon';
+import { MailIcon } from '@/components/icons/MailIcon';
+import { WhatsappIcon } from '@/components/icons/WhatsappIcon';
+import { TelegramIcon } from '@/components/icons/TelegramIcon';
+import { PlusCircleIcon } from '@/components/icons/PlusCircleIcon';
 
 
 interface JobDetailModalProps {

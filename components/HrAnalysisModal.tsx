@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 // FIX: Corrected import path for types
 import type { Job } from '../types';
 import Modal from './Modal';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { SparklesIcon } from '@/components/icons/SparklesIcon';
 
 interface HrAnalysisModalProps {
     job: Job;

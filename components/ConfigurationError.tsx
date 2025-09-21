@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { KeyIcon } from './icons/KeyIcon';
-import { WarningIcon } from './icons/WarningIcon';
-import { GoogleIcon } from './icons/GoogleIcon';
-import { CodeBracketIcon } from './icons/CodeBracketIcon';
-import { GlobeAltIcon } from './icons/GlobeAltIcon';
+import { KeyIcon } from '@/components/icons/KeyIcon';
+import { WarningIcon } from '@/components/icons/WarningIcon';
+import { GoogleIcon } from '@/components/icons/GoogleIcon';
+import { CodeBracketIcon } from '@/components/icons/CodeBracketIcon';
+import { GlobeAltIcon } from '@/components/icons/GlobeAltIcon';
 
 interface ConfigurationErrorProps {
     isFirebaseOk: boolean;

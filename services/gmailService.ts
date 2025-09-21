@@ -1,11 +1,6 @@
-// FIX: Remove reference types that cause errors when @types are not installed.
-// The global declaration below is sufficient for type checking.
-
-// FIX: Add global declaration for gapi to resolve type errors when @types are not available.
-declare const gapi: any;
-
-// FIX: Corrected import path for types
 import type { Email } from "../types";
+
+const GMAIL_API_BASE_URL = 'https://www.googleapis.com/gmail/v1/users/me';
 
 interface SendEmailParams {
     to: string;
@@ -16,7 +11,7 @@ interface SendEmailParams {
 }
 
 const getHeader = (headers: any[], name: string) => {
-    const header = headers.find(h => h.name === name);
+    const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
     return header ? header.value || '' : '';
 };
 
@@ -31,9 +26,7 @@ const getBody = (message: any): string => {
     
     if (encodedBody) {
         try {
-            // Replace URL-safe base64 characters
             const base64 = encodedBody.replace(/-/g, '+').replace(/_/g, '/');
-            // Decode base64 and then URI component
             return decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         } catch (e) {
             console.error('Error decoding message body:', e);
@@ -43,10 +36,30 @@ const getBody = (message: any): string => {
     return '';
 };
 
-export const sendEmail = async (params: SendEmailParams): Promise<void> => {
+const gmailFetch = async (url: string, accessToken: string, options: RequestInit = {}) => {
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        const errorMessage = error.error?.message || "Unknown Gmail API error";
+         if (errorMessage.includes("API not enabled") || errorMessage.includes("accessNotConfigured")) {
+            throw new Error("API Gmail не включено в вашем проекте Google Cloud. Перейдите в Google Cloud Console, найдите 'Gmail API' и нажмите 'Enable'.");
+        }
+        throw new Error(`Ошибка Gmail API: ${errorMessage}`);
+    }
+    return response.json();
+};
+
+export const sendEmail = async (params: SendEmailParams, accessToken: string): Promise<void> => {
     const { to, from, fromName, subject, body } = params;
 
-    // RFC 2822 formatted email
     const emailLines = [
         `From: "${fromName}" <${from}>`,
         `To: ${to}`,
@@ -56,67 +69,39 @@ export const sendEmail = async (params: SendEmailParams): Promise<void> => {
         body.replace(/\n/g, '<br>')
     ];
     const email = emailLines.join('\r\n');
+    const base64EncodedEmail = btoa(unescape(encodeURIComponent(email))).replace(/\+/g, '-').replace(/\//g, '_');
 
-    // Base64 encode the email
-    const base64EncodedEmail = btoa(unescape(encodeURIComponent(email)));
-
-    await gapi.client.gmail.users.messages.send({
-        userId: 'me',
-        resource: {
+    await gmailFetch(`${GMAIL_API_BASE_URL}/messages/send`, accessToken, {
+        method: 'POST',
+        body: JSON.stringify({
             raw: base64EncodedEmail
-        }
+        })
     });
 };
 
-export const listMessages = async (maxResults = 20): Promise<Email[]> => {
-    try {
-        const listResponse = await gapi.client.gmail.users.messages.list({
-            userId: 'me',
-            maxResults,
-            labelIds: ['INBOX'],
-        });
+export const listMessages = async (accessToken: string, maxResults = 20): Promise<Email[]> => {
+    const listResponse = await gmailFetch(`${GMAIL_API_BASE_URL}/messages?maxResults=${maxResults}&labelIds=INBOX`, accessToken);
 
-        const messages = listResponse.result.messages || [];
-        if (messages.length === 0) {
-            return [];
-        }
-
-        const batch = gapi.client.newBatch();
-        messages.forEach(message => {
-            if (message.id) {
-                batch.add(gapi.client.gmail.users.messages.get({ userId: 'me', id: message.id }));
-            }
-        });
-
-        const batchResponse = await batch;
-        const results = batchResponse.result;
-        if (!results) {
-            return [];
-        }
-        
-        return Object.values(results)
-            .map((responseWrapper: any) => {
-                if (!responseWrapper || responseWrapper.status >= 400 || !responseWrapper.result || responseWrapper.result.error) {
-                    console.error('Ошибка в одном из ответов пакета Gmail:', responseWrapper.result?.error);
-                    return null;
-                }
-                const msg = responseWrapper.result as any;
-                const headers = msg.payload?.headers || [];
-                return {
-                    id: msg.id || '',
-                    from: getHeader(headers, 'From'),
-                    subject: getHeader(headers, 'Subject'),
-                    snippet: msg.snippet || '',
-                    body: getBody(msg),
-                };
-            })
-            .filter((email): email is Email => email !== null);
-    } catch (error: any) {
-        console.error("Ошибка Gmail API в listMessages:", error);
-        const errorMessage = error.result?.error?.message || error.message || "Не удалось получить доступ к Gmail API.";
-        if (errorMessage.includes("API not enabled") || errorMessage.includes("accessNotConfigured")) {
-            throw new Error("API Gmail не включено в вашем проекте Google Cloud. Перейдите в Google Cloud Console, найдите 'Gmail API' и нажмите 'Enable'.");
-        }
-        throw new Error(`Ошибка при чтении писем: ${errorMessage}`);
+    const messages = listResponse.messages || [];
+    if (messages.length === 0) {
+        return [];
     }
+
+    // Using Promise.all for batching requests with fetch
+    const messagePromises = messages.map((message: { id: string }) =>
+        gmailFetch(`${GMAIL_API_BASE_URL}/messages/${message.id}`, accessToken)
+    );
+
+    const fullMessages = await Promise.all(messagePromises);
+
+    return fullMessages.map((msg: any) => {
+        const headers = msg.payload?.headers || [];
+        return {
+            id: msg.id || '',
+            from: getHeader(headers, 'From'),
+            subject: getHeader(headers, 'Subject'),
+            snippet: msg.snippet || '',
+            body: getBody(msg),
+        };
+    }).filter((email): email is Email => email !== null);
 };
