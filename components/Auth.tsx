@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SparklesIcon } from './icons/SparklesIcon';
-import { GoogleIcon } from './icons/GoogleIcon';
+import { SparklesIcon } from '@/components/icons/SparklesIcon';
+import { GoogleIcon } from '@/components/icons/GoogleIcon';
 import { auth } from '../services/firebase';
 import { 
     createUserWithEmailAndPassword, 

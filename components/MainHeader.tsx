@@ -1,7 +1,7 @@
 import React from 'react';
 // FIX: Corrected import path for constants
 import { AppStatus } from '../constants';
-import { SparklesIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@/components/icons/SparklesIcon';
 
 interface MainHeaderProps {
     onSearch: () => void;

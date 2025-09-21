@@ -5,7 +5,7 @@ import type { Profile, PromptTemplate } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
-import { PencilSquareIcon } from '@heroicons/react/24/outline';
+import { PencilSquareIcon } from '@/components/icons/PencilSquareIcon';
 
 interface SettingsModalProps {
     user: User;

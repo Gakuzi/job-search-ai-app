@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 // FIX: Corrected import path for types
 import type { Job } from '../types';
-import { SparklesIcon, StarIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@/components/icons/SparklesIcon';
+import { StarIcon } from '@/components/icons/StarIcon';
 
 interface ScanResultsProps {
     jobs: Job[];
