@@ -1,17 +1,20 @@
 import React from 'react';
-// FIX: Corrected import path for types
-import type { GoogleUser } from '../types';
-import { GoogleIcon } from './icons/GoogleIcon';
-import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import type { User } from 'firebase/auth';
+import { GoogleIcon } from '@/components/icons/GoogleIcon.tsx';
+import { QuestionMarkCircleIcon } from '@/components/icons/QuestionMarkCircleIcon.tsx';
 
 interface GmailConnectProps {
     isConnected: boolean;
-    user: GoogleUser | null;
+    user: User | null;
     onConnect: () => void;
     onDisconnect: () => void;
 }
 
 const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnect, onDisconnect }) => {
+    const photoURL = user?.photoURL || 'https://www.gravatar.com/avatar?d=mp';
+    const displayName = user?.displayName || 'Пользователь';
+    const email = user?.email || 'Email не указан';
+
     return (
         <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
             <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200">Интеграция с Gmail</h3>
@@ -24,10 +27,10 @@ const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnec
                     <div>
                         <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                             <div className="flex items-center gap-3">
-                                <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full" />
+                                <img src={photoURL} alt={displayName} className="w-10 h-10 rounded-full" />
                                 <div>
-                                    <p className="font-semibold text-green-800 dark:text-green-200">{user.name}</p>
-                                    <p className="text-sm text-green-600 dark:text-green-400">{user.email}</p>
+                                    <p className="font-semibold text-green-800 dark:text-green-200">{displayName}</p>
+                                    <p className="text-sm text-green-600 dark:text-green-400">{email}</p>
                                 </div>
                             </div>
                             <button
