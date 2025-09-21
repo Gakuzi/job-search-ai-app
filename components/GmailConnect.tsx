@@ -5,13 +5,16 @@ import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 interface GmailConnectProps {
     isConnected: boolean;
-    isReady: boolean;
-    user: GoogleUser | null;
+    user: User | null;
     onConnect: () => void;
     onDisconnect: () => void;
 }
 
-const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, isReady, user, onConnect, onDisconnect }) => {
+const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnect, onDisconnect }) => {
+    const photoURL = user?.photoURL || 'https://www.gravatar.com/avatar?d=mp';
+    const displayName = user?.displayName || 'Пользователь';
+    const email = user?.email || 'Email не указан';
+
     return (
         <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
             <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200">Интеграция с Gmail</h3>

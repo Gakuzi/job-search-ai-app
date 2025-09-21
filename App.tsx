@@ -123,9 +123,8 @@ const MainApplication: React.FC = () => {
     }, []);
 
     const handleLogout = () => {
-        if (auth) {
-            signOut(auth);
-        }
+        gAuth.signOut();
+        setGoogleAccessToken(null);
         setActiveProfileId(null);
     };
 
@@ -367,10 +366,21 @@ const MainApplication: React.FC = () => {
                         onDeleteProfile={() => {}}
                         onAddProfile={(name) => {}}
                         isGoogleConnected={isGoogleConnected}
-                        isGapiReady={isGapiReady}
-                        googleUser={googleUser}
-                        onGoogleConnect={() => gAuth.getToken(tokenClient)}
-                        onGoogleDisconnect={() => { gAuth.revokeToken(); setGoogleUser(null); }}
+                        onGoogleConnect={async () => {
+                            try {
+                                const credential = await gAuth.linkGoogleAccount(user);
+                                const token = gAuth.getAccessTokenFromCredential(credential);
+                                setGoogleAccessToken(token);
+                            } catch (error) {
+                                console.error("Failed to link Google Account", error);
+                                setStatus(AppStatus.Error);
+                                setStatusMessage("Не удалось подключить аккаунт Google.");
+                            }
+                        }}
+                        onGoogleDisconnect={() => {
+                            // This just disconnects the Gmail API access, doesn't sign the user out.
+                            setGoogleAccessToken(null);
+                        }}
                         promptTemplates={promptTemplates}
                         onUpdatePrompt={handleUpdatePrompt}
                         onEditPrompt={(template) => { setTemplateToEdit(template); setSelectedJob(jobs[0]); }}
