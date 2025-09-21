@@ -48,8 +48,7 @@ jobs:
           # Команда для развертывания и хостинга, и функций
           args: deploy --only hosting,functions
         env:
-          # Секретный ключ сервисного аккаунта для аутентификации
-          # Убедитесь, что в секретах GitHub он называется именно так
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          # Используем сервисный аккаунт для аутентификации
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           # ID вашего проекта в Firebase
           PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
