@@ -1,6 +1,5 @@
 import React from 'react';
-// FIX: Corrected import path for types
-import type { GoogleUser } from '../types';
+import type { User } from 'firebase/auth';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
@@ -25,10 +24,10 @@ const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, isReady, user,
                     <div>
                         <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                             <div className="flex items-center gap-3">
-                                <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full" />
+                                <img src={photoURL} alt={displayName} className="w-10 h-10 rounded-full" />
                                 <div>
-                                    <p className="font-semibold text-green-800 dark:text-green-200">{user.name}</p>
-                                    <p className="text-sm text-green-600 dark:text-green-400">{user.email}</p>
+                                    <p className="font-semibold text-green-800 dark:text-green-200">{displayName}</p>
+                                    <p className="text-sm text-green-600 dark:text-green-400">{email}</p>
                                 </div>
                             </div>
                             <button

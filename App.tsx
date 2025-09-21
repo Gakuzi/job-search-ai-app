@@ -32,7 +32,7 @@ import * as gAuth from './services/googleAuthService';
 import * as gMail from './services/gmailService';
 import { getApiKey } from './services/apiKeyService';
 
-import type { Job, Profile, KanbanStatus, GoogleUser, Email, PromptTemplate, SearchSettings } from './types';
+import type { Job, Profile, KanbanStatus, Email, PromptTemplate, SearchSettings } from './types';
 import { AppStatus } from './constants';
 
 // Mocking hhService as it's not provided in the file list.
@@ -72,20 +72,26 @@ const MainApplication: React.FC = () => {
     const [templateToEdit, setTemplateToEdit] = useState<PromptTemplate | null>(null);
     const [aiResult, setAiResult] = useState('');
     
-    const [tokenClient, setTokenClient] = useState<any>(null);
-    const [isGapiReady, setIsGapiReady] = useState(false);
-    const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+    const [googleAccessToken, setGoogleAccessToken] = useLocalStorage<string | null>('googleAccessToken', null);
     
     const [promptTemplates, setPromptTemplates] = useLocalStorage<PromptTemplate[]>('promptTemplates', DEFAULT_PROMPTS);
 
     const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
-    const isGoogleConnected = gAuth.isConnected();
+    const isGoogleConnected = !!googleAccessToken;
 
     useEffect(() => {
         if (!user) return;
+
+        // When user logs in, check if a token was just stored from the Auth component
+        const storedToken = sessionStorage.getItem('googleAccessToken');
+        if (storedToken) {
+            setGoogleAccessToken(storedToken);
+            sessionStorage.removeItem('googleAccessToken');
+        }
+
         const unsubscribe = firestore.getProfiles(user.uid, setProfiles);
         return () => unsubscribe();
-    }, [user]);
+    }, [user, setGoogleAccessToken]);
 
     useEffect(() => {
         if (profiles.length > 0 && (!activeProfileId || !profiles.some(p => p.id === activeProfileId))) {
@@ -101,30 +107,6 @@ const MainApplication: React.FC = () => {
             setJobs([]);
         }
     }, [user, activeProfileId]);
-
-    useEffect(() => {
-        const initGoogleApis = async () => {
-            try {
-                await gAuth.gapiLoad('client:oauth2');
-                await gAuth.initGapiClient();
-                const client = gAuth.initTokenClient(async (resp: any) => {
-                    if (resp.error) return;
-                    try {
-                        const profile = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                            headers: { 'Authorization': `Bearer ${resp.access_token}` }
-                        }).then(res => res.json());
-                        setGoogleUser({ name: profile.name, email: profile.email, picture: profile.picture });
-                    } catch (e) { console.error(e); }
-                });
-                setTokenClient(client);
-                setIsGapiReady(true);
-            } catch (e) {
-                setStatus(AppStatus.Error);
-                setStatusMessage("Не удалось инициализировать API Google.");
-            }
-        };
-        if (isGoogleConfigured) initGoogleApis();
-    }, []);
 
     const runAIAction = useCallback(async (action: Promise<string>) => {
         setActiveModal('loading-ai');
@@ -247,11 +229,16 @@ const MainApplication: React.FC = () => {
     };
     
     const handleScanReplies = async () => {
+        if (!googleAccessToken) {
+            setStatus(AppStatus.Error);
+            setStatusMessage("Аккаунт Google не подключен. Подключите его в настройках.");
+            return;
+        }
         setActiveModal('gmail-scanner');
         setScannedEmails([]);
         setAnalysisJobId(null);
         try {
-            const emails = await gMail.listMessages(30);
+            const emails = await gMail.listMessages(googleAccessToken, 30);
             setScannedEmails(emails);
         } catch (error) {
             console.error(error);
@@ -316,7 +303,6 @@ const MainApplication: React.FC = () => {
                             onGenerateEmail={handleGenerateEmail}
                             onQuickApplyEmail={async () => {}} // Placeholder
                             isGoogleConnected={isGoogleConnected}
-                            isGapiReady={isGapiReady}
                             onScanReplies={handleScanReplies}
                             onRefreshStatuses={async () => {}} // Placeholder
                             onCompareJobs={handleCompareJobs}
@@ -350,7 +336,6 @@ const MainApplication: React.FC = () => {
                         onQuickApplyWhatsapp={async () => {}}
                         onQuickApplyTelegram={async () => {}}
                         isGoogleConnected={isGoogleConnected}
-                        isGapiReady={isGapiReady}
                     />
                 )}
                 
@@ -373,8 +358,9 @@ const MainApplication: React.FC = () => {
                     />
                 )}
 
-                {activeModal === 'settings' && activeProfile && (
+                {activeModal === 'settings' && activeProfile && user && (
                      <SettingsModal
+                        user={user}
                         profile={activeProfile}
                         onClose={() => setActiveModal(null)}
                         onUpdateProfile={handleUpdateProfile}

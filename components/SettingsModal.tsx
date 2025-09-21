@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import type { User } from 'firebase/auth';
 import Modal from './Modal';
-import type { Profile, PromptTemplate, GoogleUser } from '../types';
+import type { Profile, PromptTemplate } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
 import { PencilSquareIcon } from '@heroicons/react/24/outline';
 
 interface SettingsModalProps {
+    user: User;
     profile: Profile;
     onClose: () => void;
     onUpdateProfile: (updates: Partial<Profile>) => void;
@@ -25,6 +27,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
+    user,
     profile,
     onClose,
     onUpdateProfile,
