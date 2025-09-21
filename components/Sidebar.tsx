@@ -2,13 +2,13 @@ import React from 'react';
 import type { User } from 'firebase/auth';
 // FIX: Corrected import path for types
 import type { Profile } from '../types';
-import { SunIcon } from '@/components/icons/SunIcon';
-import { MoonIcon } from '@/components/icons/MoonIcon';
-import { SparklesIcon } from '@/components/icons/SparklesIcon';
-import { Cog6ToothIcon } from '@/components/icons/Cog6ToothIcon';
-import { ChevronDownIcon } from '@/components/icons/ChevronDownIcon';
-import { UserGroupIcon } from '@/components/icons/UserGroupIcon';
-import { BriefcaseIcon } from '@/components/icons/BriefcaseIcon';
+import { SunIcon } from '@/components/icons/SunIcon.tsx';
+import { MoonIcon } from '@/components/icons/MoonIcon.tsx';
+import { SparklesIcon } from '@/components/icons/SparklesIcon.tsx';
+import { Cog6ToothIcon } from '@/components/icons/Cog6ToothIcon.tsx';
+import { ChevronDownIcon } from '@/components/icons/ChevronDownIcon.tsx';
+import { UserGroupIcon } from '@/components/icons/UserGroupIcon.tsx';
+import { BriefcaseIcon } from '@/components/icons/BriefcaseIcon.tsx';
 
 interface SidebarProps {
     theme: string;

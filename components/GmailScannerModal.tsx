@@ -1,6 +1,6 @@
 import React from 'react';
 import Modal from './Modal';
-import { SparklesIcon } from '@/components/icons/SparklesIcon';
+import { SparklesIcon } from '@/components/icons/SparklesIcon.tsx';
 // FIX: Corrected import path for types
 import type { Email, Job } from '../types';
 

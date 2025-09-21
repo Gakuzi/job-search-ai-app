@@ -1,7 +1,7 @@
 import React from 'react';
 import type { User } from 'firebase/auth';
-import { GoogleIcon } from '@/components/icons/GoogleIcon';
-import { QuestionMarkCircleIcon } from '@/components/icons/QuestionMarkCircleIcon';
+import { GoogleIcon } from '@/components/icons/GoogleIcon.tsx';
+import { QuestionMarkCircleIcon } from '@/components/icons/QuestionMarkCircleIcon.tsx';
 
 interface GmailConnectProps {
     isConnected: boolean;

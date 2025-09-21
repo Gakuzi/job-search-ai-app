@@ -4,15 +4,15 @@ import { v4 as uuidv4 } from 'uuid';
 // FIX: Corrected import path for types
 import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
-import { XCircleIcon } from '@/components/icons/XCircleIcon';
-import { ClipboardIcon } from '@/components/icons/ClipboardIcon';
-import { SendIcon } from '@/components/icons/SendIcon';
-import { PencilSquareIcon } from '@/components/icons/PencilSquareIcon';
-import { ChatBubbleIcon } from '@/components/icons/ChatBubbleIcon';
-import { MailIcon } from '@/components/icons/MailIcon';
-import { WhatsappIcon } from '@/components/icons/WhatsappIcon';
-import { TelegramIcon } from '@/components/icons/TelegramIcon';
-import { PlusCircleIcon } from '@/components/icons/PlusCircleIcon';
+import { XCircleIcon } from '@/components/icons/XCircleIcon.tsx';
+import { ClipboardIcon } from '@/components/icons/ClipboardIcon.tsx';
+import { SendIcon } from '@/components/icons/SendIcon.tsx';
+import { PencilSquareIcon } from '@/components/icons/PencilSquareIcon.tsx';
+import { ChatBubbleIcon } from '@/components/icons/ChatBubbleIcon.tsx';
+import { MailIcon } from '@/components/icons/MailIcon.tsx';
+import { WhatsappIcon } from '@/components/icons/WhatsappIcon.tsx';
+import { TelegramIcon } from '@/components/icons/TelegramIcon.tsx';
+import { PlusCircleIcon } from '@/components/icons/PlusCircleIcon.tsx';
 
 
 interface JobDetailModalProps {
