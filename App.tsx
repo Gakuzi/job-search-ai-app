@@ -367,20 +367,10 @@ const MainApplication: React.FC = () => {
                         onDeleteProfile={() => {}}
                         onAddProfile={(name) => {}}
                         isGoogleConnected={isGoogleConnected}
-                        onGoogleConnect={async () => {
-                            try {
-                                const credential = await gAuth.linkGoogleAccount(user);
-                                const token = gAuth.getAccessTokenFromCredential(credential);
-                                setGoogleAccessToken(token);
-                            } catch (error) {
-                                console.error("Failed to link Google Account", error);
-                                setStatus(AppStatus.Error);
-                                setStatusMessage("Не удалось подключить аккаунт Google.");
-                            }
-                        }}
-                        onGoogleDisconnect={() => {
-                            setGoogleAccessToken(null);
-                        }}
+                        isGapiReady={isGapiReady}
+                        googleUser={googleUser}
+                        onGoogleConnect={() => gAuth.getToken(tokenClient)}
+                        onGoogleDisconnect={() => { gAuth.revokeToken(); setGoogleUser(null); }}
                         promptTemplates={promptTemplates}
                         onUpdatePrompt={handleUpdatePrompt}
                         onEditPrompt={(template) => { setTemplateToEdit(template); setSelectedJob(jobs[0]); }}

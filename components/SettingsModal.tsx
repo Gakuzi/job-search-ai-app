@@ -5,7 +5,7 @@ import type { Profile, PromptTemplate } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import GmailConnect from './GmailConnect';
 import { getApiKey, saveApiKey } from '../services/apiKeyService';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
+import { PencilSquareIcon } from '@heroicons/react/24/outline';
 
 interface SettingsModalProps {
     user: User;
@@ -16,6 +16,8 @@ interface SettingsModalProps {
     onAddProfile: (name: string) => void;
     
     isGoogleConnected: boolean;
+    isGapiReady: boolean;
+    googleUser: GoogleUser | null;
     onGoogleConnect: () => void;
     onGoogleDisconnect: () => void;
 
@@ -30,6 +32,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose,
     onUpdateProfile,
     isGoogleConnected,
+    isGapiReady,
+    googleUser,
     onGoogleConnect,
     onGoogleDisconnect,
     promptTemplates,
@@ -152,7 +156,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div className="space-y-6">
                             <GmailConnect 
                                 isConnected={isGoogleConnected}
-                                user={user}
+                                isReady={isGapiReady}
+                                user={googleUser}
                                 onConnect={onGoogleConnect}
                                 onDisconnect={onGoogleDisconnect}
                             />

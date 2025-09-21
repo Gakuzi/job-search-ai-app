@@ -2,13 +2,15 @@ import React from 'react';
 import type { User } from 'firebase/auth';
 // FIX: Corrected import path for types
 import type { Profile } from '../types';
-import { SunIcon } from './icons/SunIcon';
-import { MoonIcon } from './icons/MoonIcon';
-import { SparklesIcon } from './icons/SparklesIcon';
-import { Cog6ToothIcon } from './icons/Cog6ToothIcon';
-import { ChevronDownIcon } from './icons/ChevronDownIcon';
-import { UserGroupIcon } from './icons/UserGroupIcon';
-import { BriefcaseIcon } from './icons/BriefcaseIcon';
+import {
+    SunIcon,
+    MoonIcon,
+    SparklesIcon,
+    Cog6ToothIcon,
+    ChevronDownIcon,
+    UserGroupIcon,
+    BriefcaseIcon
+} from '@heroicons/react/24/outline';
 
 interface SidebarProps {
     theme: string;
@@ -115,7 +117,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                  <div className="flex items-center justify-center gap-2">
                      <button
                         onClick={onOpenSettings}
-                        className="flex-1 flex justify-center p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        disabled={!activeProfile}
+                        className="flex-1 flex justify-center p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Настройки"
                     >
                         <Cog6ToothIcon className="w-6 h-6" />

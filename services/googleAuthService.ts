@@ -35,20 +35,13 @@ export const signInWithGoogle = async (): Promise<UserCredential> => {
     }
 };
 
-/**
- * Links a Google account to the currently signed-in user.
- * This is for users who signed up with email/password and want to connect their Google account later.
- * @param user The currently authenticated Firebase user.
- * @returns A promise that resolves with the UserCredential on successful linking.
- */
-export const linkGoogleAccount = async (user: User): Promise<UserCredential> => {
-    try {
-        const result = await linkWithPopup(user, provider);
-        return result;
-    } catch (error) {
-        console.error("Error linking Google account:", error);
-        throw error;
+
+export const getToken = (tokenClient: any) => {
+    if (!tokenClient) {
+        console.error("Google token client is not initialized.");
+        return;
     }
+    tokenClient.requestAccessToken({ prompt: 'consent' });
 };
 
 /**
