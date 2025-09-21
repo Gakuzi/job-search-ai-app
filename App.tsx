@@ -381,6 +381,7 @@ const MainApplication: React.FC = () => {
                         onDeleteProfile={() => {}}
                         onAddProfile={(name) => {}}
                         isGoogleConnected={isGoogleConnected}
+                        isGapiReady={isGapiReady}
                         googleUser={googleUser}
                         onGoogleConnect={() => gAuth.getToken(tokenClient)}
                         onGoogleDisconnect={() => { gAuth.revokeToken(); setGoogleUser(null); }}

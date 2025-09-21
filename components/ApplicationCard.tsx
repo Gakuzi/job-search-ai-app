@@ -1,8 +1,7 @@
 import React from 'react';
 // FIX: Corrected import path for types
 import type { Job } from '../types';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { MailIcon } from './icons/MailIcon';
+import { PencilSquareIcon, EnvelopeIcon as MailIcon } from '@heroicons/react/24/outline';
 
 interface ApplicationCardProps {
     job: Job;

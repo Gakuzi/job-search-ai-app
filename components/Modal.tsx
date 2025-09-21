@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef } from 'react';
-import { XCircleIcon } from './icons/XCircleIcon';
+import { XCircleIcon } from '@heroicons/react/24/outline';
 
 interface ModalProps {
     title: string;

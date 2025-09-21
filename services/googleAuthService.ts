@@ -48,6 +48,10 @@ export const initTokenClient = (
 
 
 export const getToken = (tokenClient: any) => {
+    if (!tokenClient) {
+        console.error("Google token client is not initialized.");
+        return;
+    }
     tokenClient.requestAccessToken({ prompt: 'consent' });
 };
 

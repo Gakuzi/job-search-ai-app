@@ -2,16 +2,17 @@ import React from 'react';
 // FIX: Corrected import path for types
 import type { GoogleUser } from '../types';
 import { GoogleIcon } from './icons/GoogleIcon';
-import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 interface GmailConnectProps {
     isConnected: boolean;
+    isReady: boolean;
     user: GoogleUser | null;
     onConnect: () => void;
     onDisconnect: () => void;
 }
 
-const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnect, onDisconnect }) => {
+const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, isReady, user, onConnect, onDisconnect }) => {
     return (
         <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
             <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200">Интеграция с Gmail</h3>
@@ -65,10 +66,11 @@ const GmailConnect: React.FC<GmailConnectProps> = ({ isConnected, user, onConnec
                 ) : (
                     <button
                         onClick={onConnect}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                        disabled={!isReady}
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <GoogleIcon className="w-5 h-5" />
-                        Подключить Google
+                        {isReady ? 'Подключить Google' : 'Инициализация...'}
                     </button>
                 )}
             </div>

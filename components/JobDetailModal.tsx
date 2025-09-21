@@ -4,15 +4,17 @@ import { v4 as uuidv4 } from 'uuid';
 // FIX: Corrected import path for types
 import type { Job, Interaction } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
-import { XCircleIcon } from './icons/XCircleIcon';
-import { ClipboardIcon } from './icons/ClipboardIcon';
-import { SendIcon } from './icons/SendIcon';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
-import { MailIcon } from './icons/MailIcon';
+import {
+    XCircleIcon,
+    ClipboardIcon,
+    PaperAirplaneIcon as SendIcon,
+    PencilSquareIcon,
+    ChatBubbleLeftRightIcon as ChatBubbleIcon,
+    EnvelopeIcon as MailIcon,
+    PlusCircleIcon
+} from '@heroicons/react/24/outline';
 import { WhatsappIcon } from './icons/WhatsappIcon';
 import { TelegramIcon } from './icons/TelegramIcon';
-import { PlusCircleIcon } from './icons/PlusCircleIcon';
 
 
 interface JobDetailModalProps {
