@@ -3,7 +3,7 @@ import Modal from './Modal';
 import type { PromptTemplate, Job, Profile } from '../types';
 import { SparklesIcon } from '@components/icons/SparklesIcon.tsx';
 import { executeCustomPrompt } from '../services/geminiService';
-import { InformationCircleIcon } from '@components/icons/Inform
+import { InformationCircleIcon } from '@components/icons/InformationCircleIcon.tsx';
 
 interface PromptEditorModalProps {
     template: PromptTemplate;
