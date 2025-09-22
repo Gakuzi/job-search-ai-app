@@ -48,7 +48,7 @@ jobs:
           # Команда для развертывания и хостинга, и функций
           args: deploy --only hosting,functions
         env:
-          # Используем сервисный аккаунт для аутентификации
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          # ID вашего проекта в Firebase
+          # Используем токен для аутентификации
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          # ID вашего проекта в Firebase (оставляем на всякий случай, хотя токен уже привязан к проекту)
           PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
