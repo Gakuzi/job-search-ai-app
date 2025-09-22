@@ -1,3 +1,4 @@
+// This file contains the Firebase Cloud Function for searching jobs on Avito.
 /**
  * ==========================================================================================
  * ВАЖНО: ЭТО КОД ДЛЯ FIREBASE FUNCTIONS (BACKEND)
