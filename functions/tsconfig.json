@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2017",
+    "strict": true,
+    "outDir": ".",
+    "sourceMap": true
+  },
+  "include": [
+    "index.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
