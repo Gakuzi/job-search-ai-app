@@ -144,14 +144,8 @@ const MainApplication: React.FC = () => {
                 foundJobs = [...foundJobs, ...hhJobs];
             }
             if (settings.platforms.avito) {
-                const clientId = await getApiKey('avito_client_id');
-                const clientSecret = await getApiKey('avito_client_secret');
-                if (clientId && clientSecret) {
-                    const avitoJobs = await findJobsOnAvitoAPI(settings, clientId, clientSecret);
-                    foundJobs = [...foundJobs, ...avitoJobs];
-                } else {
-                     setStatusMessage('Ключи API для Avito не настроены. Пропускаем...');
-                }
+                const avitoJobs = await findJobsOnAvitoAPI(settings);
+                foundJobs = [...foundJobs, ...avitoJobs];
             }
 
             setStatusMessage(`Найдено ${foundJobs.length} вакансий. Анализируем с помощью ИИ...`);
