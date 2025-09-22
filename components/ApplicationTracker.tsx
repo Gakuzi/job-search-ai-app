@@ -4,7 +4,6 @@ import type { Job, KanbanStatus, Profile } from '../types';
 import KanbanBoard from './KanbanBoard';
 import { GoogleIcon } from '@components/icons/GoogleIcon.tsx';
 import { ArrowPathIcon } from '@components/icons/ArrowPathIcon.tsx';
-
 interface ApplicationTrackerProps {
     jobs: Job[];
     profiles: Profile[];

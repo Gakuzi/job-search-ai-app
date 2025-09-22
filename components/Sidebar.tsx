@@ -115,7 +115,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                  <div className="flex items-center justify-center gap-2">
                      <button
                         onClick={onOpenSettings}
-                        className="flex-1 flex justify-center p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        disabled={!activeProfile}
+                        className="flex-1 flex justify-center p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="Настройки"
                     >
                         <Cog6ToothIcon className="w-6 h-6" />
