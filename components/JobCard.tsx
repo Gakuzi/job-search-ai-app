@@ -1,9 +1,9 @@
 import React from 'react';
 // FIX: Corrected import path for types
 import type { Job } from '../types';
-import { SparklesIcon } from './icons/SparklesIcon';
-import { PencilSquareIcon } from './icons/PencilSquareIcon';
-import { MailIcon } from './icons/MailIcon';
+import { SparklesIcon } from '@components/icons/SparklesIcon.tsx';
+import { PencilSquareIcon } from '@components/icons/PencilSquareIcon.tsx';
+import { MailIcon } from '@components/icons/MailIcon.tsx';
 
 const LocationMarkerIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>

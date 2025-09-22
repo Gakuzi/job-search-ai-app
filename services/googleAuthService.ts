@@ -1,71 +1,72 @@
-// FIX: Remove reference types that cause errors when @types are not installed.
-// The global declarations below are sufficient for type checking.
-
-// FIX: Add global declarations for Google APIs to resolve type errors when @types are not available.
-declare const gapi: any;
-declare const google: any;
-
-// FIX: Cast import.meta to any to access env properties without TypeScript errors.
-const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
+import {
+    getAuth,
+    signInWithPopup,
+    linkWithPopup,
+    GoogleAuthProvider,
+    UserCredential,
+    User,
+    signOut as firebaseSignOut
+} from "firebase/auth";
+import { auth } from "./firebase";
 
 const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'https://www.googleapis.com/auth/userinfo.email',
-].join(' ');
+];
 
-export const gapiLoad = (libs: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-        try {
-            // FIX: The type definition for gapi.load is overly restrictive in some environments.
-            // With `gapi` declared as `any`, the cast is no longer needed.
-            gapi.load(libs, resolve);
-        } catch (err) {
-            reject(err);
-        }
-    });
-};
-
-export const initGapiClient = (): Promise<void> => {
-    return gapi.client.init({
-        // The Gmail API uses OAuth 2.0 for authorization and does not require an API key
-        // for this client initialization. Providing an unrelated key (like for Gemini)
-        // could cause the GAPI client to initialize but fail to load the Gmail API surface correctly.
-        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest'],
-    });
-};
-
-export const initTokenClient = (
-    callback: (resp: any) => void
-): any => {
-    return google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: GMAIL_SCOPES,
-        callback,
-    });
-};
+const provider = new GoogleAuthProvider();
+GMAIL_SCOPES.forEach(scope => provider.addScope(scope));
 
 
-export const getToken = (tokenClient: any) => {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-};
-
-export const revokeToken = () => {
-    const token = gapi.client.getToken();
-    if (token) {
-        google.accounts.oauth2.revoke(token.access_token, () => {
-            console.log('Access token revoked.');
-            gapi.client.setToken(null);
-        });
-    }
-};
-
-// FIX: Add a helper function to check connection status, safely handling cases where the gapi client isn't loaded yet.
-export const isConnected = (): boolean => {
+/**
+ * Initiates the Google Sign-In process using Firebase Authentication.
+ * It requests the necessary Gmail scopes so the access token can be used
+ * for API calls later.
+ * @returns A promise that resolves with the UserCredential on successful authentication.
+ */
+export const signInWithGoogle = async (): Promise<UserCredential> => {
+    if (!auth) throw new Error("Firebase Auth is not initialized.");
     try {
-        return !!gapi.client.getToken();
-    } catch (e) {
-        return false;
+        const result = await signInWithPopup(auth, provider);
+        return result;
+    } catch (error) {
+        console.error("Error during Google sign-in:", error);
+        throw error;
     }
+};
+
+/**
+ * Links a Google account to the currently signed-in user.
+ * This is for users who signed up with email/password and want to connect their Google account later.
+ * @param user The currently authenticated Firebase user.
+ * @returns A promise that resolves with the UserCredential on successful linking.
+ */
+export const linkGoogleAccount = async (user: User): Promise<UserCredential> => {
+    try {
+        const result = await linkWithPopup(user, provider);
+        return result;
+    } catch (error) {
+        console.error("Error linking Google account:", error);
+        throw error;
+    }
+};
+
+/**
+ * Signs the current user out using Firebase Authentication.
+ * @returns A promise that resolves when the sign-out is complete.
+ */
+export const signOut = async (): Promise<void> => {
+    if (!auth) throw new Error("Firebase Auth is not initialized.");
+    await firebaseSignOut(auth);
+};
+
+/**
+ * Extracts the OAuth access token from a UserCredential object.
+ * This token is required to make calls to Google APIs like Gmail.
+ * @param credential The UserCredential object from a successful sign-in.
+ * @returns The access token string, or null if not found.
+ */
+export const getAccessTokenFromCredential = (credential: UserCredential): string | null => {
+    const credentialWithToken = credential.credential as any;
+    return credentialWithToken?.accessToken || null;
 };
