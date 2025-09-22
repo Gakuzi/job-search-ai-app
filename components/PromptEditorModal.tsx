@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import type { PromptTemplate, Job, Profile } from '../types';
-import { SparklesIcon } from '@/components/icons/SparklesIcon.tsx';
+import { SparklesIcon } from '@components/icons/SparklesIcon.tsx';
 import { executeCustomPrompt } from '../services/geminiService';
-import { InformationCircleIcon } from '@/components/icons/InformationCircleIcon.tsx';
+import { InformationCircleIcon } from '@components/icons/Inform
 
 interface PromptEditorModalProps {
     template: PromptTemplate;
