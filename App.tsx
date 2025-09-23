@@ -22,7 +22,7 @@ import AuthGuard from './components/AuthGuard';
 import { useTheme } from './hooks/useTheme';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
-import { auth, isConfigured as isFirebaseConfigured } from './services/firebase';
+import { auth, firebaseConfig } from './services/firebase';
 import * as firestore from './services/firestoreService';
 import * as gemini from './services/geminiService';
 // hhService is not provided, so we're using a mock for now.
@@ -30,6 +30,7 @@ import * as gemini from './services/geminiService';
 import { findJobsOnAvitoAPI } from './services/avitoService';
 import * as gAuth from './services/googleAuthService';
 import * as gMail from './services/gmailService';
+import { getApiKey } from './services/apiKeyService';
 
 import type { Job, Profile, KanbanStatus, Email, PromptTemplate, SearchSettings } from './types';
 import { AppStatus } from './constants';
@@ -39,6 +40,9 @@ const findJobsOnHH = async (settings: SearchSettings): Promise<Omit<Job, 'id' | 
     console.warn("`hhService` is not implemented. Returning empty array for hh.ru jobs.");
     return Promise.resolve([]);
 };
+
+const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('AIzaSy');
+const isGoogleConfigured = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID && !(import.meta as any).env.VITE_GOOGLE_CLIENT_ID.includes('your-');
 
 const DEFAULT_PROMPTS: PromptTemplate[] = [
     { id: 'adapt_resume', name: 'Адаптация резюме', description: 'Изменяет резюме под конкретную вакансию', template: "Адаптируй следующее резюме, чтобы оно максимально соответствовало требованиям вакансии. Сделай акцент на ключевых навыках и опыте, которые релевантны для этой должности. Не выдумывай опыт, которого нет в исходном резюме. Просто переформулируй и расставь акценты. Ответ должен быть только текстом адаптированного резюме, без лишних вступлений и заключений.\n\nИсходное резюме:\n---\n{{profile.resume}}\n---\n\nВакансия:\n---\nДолжность: {{job.title}} в {{job.company}}\nОписание: {{job.description}}\n---" },
@@ -403,10 +407,10 @@ const MainApplication: React.FC = () => {
 }
 
 const App: React.FC = () => {
-    // All configuration is now checked within the isFirebaseConfigured flag,
-    // which reads from localStorage. If it's not configured, we show the error screen.
+    // Firebase is essential for the app to run (auth, database).
+    // The Google Client ID is optional for startup and only required for Gmail features.
     if (!isFirebaseConfigured) {
-        return <ConfigurationError />;
+        return <ConfigurationError isFirebaseOk={isFirebaseConfigured} isGoogleOk={isGoogleConfigured} />;
     }
     
     return <MainApplication />;
