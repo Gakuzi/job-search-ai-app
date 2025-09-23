@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { KeyIcon } from '@components/icons/KeyIcon.tsx';
 import { WarningIcon } from '@components/icons/WarningIcon.tsx';
+
 import { saveApiConfig, getApiConfig, ApiConfig } from '@services/apiKeyService.ts';
+
 
 const InputField: React.FC<{
     label: string;
@@ -28,6 +30,7 @@ const InputField: React.FC<{
 const ConfigurationError: React.FC<{}> = () => {
     const [config, setConfig] = useState<ApiConfig>(getApiConfig());
 
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setConfig(prevConfig => ({
@@ -35,6 +38,7 @@ const ConfigurationError: React.FC<{}> = () => {
             [name]: value,
         }));
     };
+
 
     const handleSave = () => {
         saveApiConfig(config);
@@ -53,6 +57,7 @@ const ConfigurationError: React.FC<{}> = () => {
         <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center p-4">
             <div className="w-full max-w-2xl bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 md:p-8">
                 <div className="text-center mb-6">
+
                     <div className="inline-block p-3 bg-red-100 dark:bg-red-900/40 rounded-full mb-4">
                         <KeyIcon className="w-8 h-8 text-red-600 dark:text-red-400" />
                     </div>
@@ -100,6 +105,26 @@ const ConfigurationError: React.FC<{}> = () => {
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700 text-center">
+=======
+                     <div className="inline-block p-3 bg-red-100 dark:bg-red-900/40 rounded-full mb-4">
+                        <WarningIcon className="w-8 h-8 text-red-600 dark:text-red-400" />
+                    </div>
+                    <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Требуется настройка</h1>
+                    <p className="mt-2 text-slate-600 dark:text-slate-400 max-w-3xl mx-auto">
+                        Приложение не может запуститься, так как не хватает ключей API. Пожалуйста, следуйте инструкциям ниже для вашей среды.
+                    </p>
+                </div>
+                
+                <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
+                    <div className="flex -mb-px">
+                        <TabButton tabName="local" label="Локальная разработка" icon={<CodeBracketIcon className="w-5 h-5" />} />
+                        <TabButton tabName="vercel" label="Развертывание на Vercel" icon={<GlobeAltIcon className="w-5 h-5" />} />
+                    </div>
+                </div>
+
+                {activeTab === 'local' && (
+                    <div className="space-y-4 animate-fade-in">
+
                     <button
                         onClick={handleSave}
                         className="w-full px-8 py-3 bg-primary-600 text-white font-semibold rounded-md hover:bg-primary-700 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-slate-800"
