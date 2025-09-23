@@ -1,30 +1,38 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Job, Profile, PromptTemplate } from '../types';
+import { getApiKey } from './apiKeyService';
 
-const API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY;
+const API_KEY = getApiKey('gemini_api_key');
 
-if (!API_KEY) {
-    console.error("VITE_GEMINI_API_KEY is not set. Please add it to your environment variables.");
-}
-
+// Initialize the GenAI client. It's okay if API_KEY is initially empty.
+// The generate function will handle the case where the key is missing.
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-const model = "gemini-2.5-flash";
+const model = "gemini-1.5-flash";
 
 const generate = async (prompt: string, isJson: boolean = false) => {
+    if (!API_KEY) {
+        const errorMessage = "Ключ Gemini API не настроен. Пожалуйста, добавьте его на экране конфигурации.";
+        console.error(errorMessage);
+        throw new Error(errorMessage);
+    }
     try {
         const result = await ai.models.generateContent({
             model,
-            contents: prompt,
-            config: {
+            contents: [{role: "user", parts: [{text: prompt}]}],
+            generationConfig: {
                 ...(isJson && { responseMimeType: "application/json" }),
                 temperature: 0.5,
             },
         });
-        return result.text;
+        return result.response.text();
     } catch (error) {
         console.error("Error calling Gemini API:", error);
-        throw new Error("Failed to get response from AI service.");
+        // Provide a more user-friendly error message
+        if (error.message.includes('API key not valid')) {
+             throw new Error("Ключ Gemini API недействителен. Проверьте его на экране конфигурации.");
+        }
+        throw new Error("Не удалось получить ответ от сервиса ИИ.");
     }
 };
 
