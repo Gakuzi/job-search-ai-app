@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { KeyIcon } from '@components/icons/KeyIcon.tsx';
-import { saveApiConfig, getApiConfig, ApiConfig } from '@services/apiKeyService.ts';
+import { KeyIcon } from './icons/KeyIcon.tsx';
+import { saveApiConfig, getApiConfig, ApiConfig } from '../services/apiKeyService.ts';
 
 const InputField: React.FC<{
     label: string;
